@@ -18,9 +18,7 @@ add_executable(atomvga
   atomvga.c
   )
 
-pico_generate_pio_header(atomvga ${CMAKE_CURRENT_LIST_DIR}/atomvga.pio)
-
-pico_generate_pio_header(atomvga ${CMAKE_CURRENT_LIST_DIR}/atomvga_out.pio)
+pico_generate_pio_header(atomvga ${CMAKE_CURRENT_LIST_DIR}/sm.pio)
 
 target_compile_definitions(atomvga PUBLIC -DPLATFORM=PLATFORM_ATOM -DPICO_SCANVIDEO_MAX_SCANLINE_BUFFER_WORDS=800 -DPICO_SCANVIDEO_SCANLINE_BUFFER_COUNT=16)
 
@@ -43,9 +41,7 @@ add_executable(atomvga_r65c02
   atomvga.c
   )
 
-pico_generate_pio_header(atomvga_r65c02 ${CMAKE_CURRENT_LIST_DIR}/r65c02.pio)
-
-pico_generate_pio_header(atomvga_r65c02 ${CMAKE_CURRENT_LIST_DIR}/atomvga_out.pio)
+pico_generate_pio_header(atomvga_r65c02 ${CMAKE_CURRENT_LIST_DIR}/sm.pio)
 
 target_compile_definitions(atomvga_r65c02 PUBLIC -DPLATFORM=PLATFORM_ATOM -DPICO_SCANVIDEO_MAX_SCANLINE_BUFFER_WORDS=800 -DPICO_SCANVIDEO_SCANLINE_BUFFER_COUNT=16 -DR65C02=1)
 
@@ -64,14 +60,15 @@ pico_enable_stdio_uart(atomvga_r65c02 1)
 # Dragon Build
 #
 
+
 add_executable(dragonvga
   atomvga.c
   eeprom.c
   )
 
-pico_generate_pio_header(dragonvga ${CMAKE_CURRENT_LIST_DIR}/atomvga.pio)
 
-pico_generate_pio_header(dragonvga ${CMAKE_CURRENT_LIST_DIR}/atomvga_out.pio)
+pico_generate_pio_header(dragonvga ${CMAKE_CURRENT_LIST_DIR}/sm.pio)
+
 
 target_compile_definitions(dragonvga PUBLIC -DPLATFORM=PLATFORM_DRAGON -DPICO_SCANVIDEO_MAX_SCANLINE_BUFFER_WORDS=800 -DPICO_SCANVIDEO_SCANLINE_BUFFER_COUNT=16)
 

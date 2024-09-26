@@ -10,13 +10,13 @@
 #include <stdlib.h>
 #include "pico.h"
 
-#if (R65C02 == 1)
-#include "r65c02.pio.h"
-#else
-#include "atomvga.pio.h"
-#endif 
+// #if (R65C02 == 1)
+// #include "r65c02.pio.h"
+// #else
+// #include "atomvga.pio.h"
+// #endif 
 
-#include "atomvga_out.pio.h"
+// #include "atomvga_out.pio.h"
 #include "pico/stdlib.h"
 #include "pico/multicore.h"
 #include "pico/scanvideo.h"
@@ -32,18 +32,13 @@
 #if (PLATFORM == PLATFORM_DRAGON)
 #include "eeprom.h"
 #endif
-
+#include "atom_if.h"
 
 // PIA and frambuffer address moved into platform.h -- PHS
 
 
 // #define vga_mode vga_mode_320x240_60
 #define vga_mode vga_mode_640x480_60
-
-const uint LED_PIN = 25;
-const uint SEL1_PIN = test_PIN_SEL1;
-const uint SEL2_PIN = test_PIN_SEL1 + 1;
-const uint SEL3_PIN = test_PIN_SEL1 + 2;
 
 static PIO pio = pio1;
 //static uint8_t *fontdata = fontdata_6847;
@@ -54,7 +49,7 @@ volatile uint8_t fontno = DEFAULT_FONT;
 volatile uint8_t max_lower = LOWER_END;
 
 volatile uint16_t ink = DEF_INK;
-volatile uint16_t ink_alt = DEF_INK_ALT;  
+volatile uint16_t ink_alt = DEF_INK_ALT;
 volatile uint16_t paper = DEF_PAPER;
 
 volatile uint8_t autoload = 0;
@@ -69,27 +64,6 @@ static void initialiseIO()
     // Grab the uart pins back from the video function
     gpio_set_function(0, GPIO_FUNC_UART);
     gpio_set_function(1, GPIO_FUNC_UART);
-
-    // pins 2 to 9 are used to read the 6502 / 6809 bus - 8 bits at a time
-    for (uint pin = 2; pin <= 9; pin++)
-    {
-        gpio_init(pin);
-        gpio_set_dir(pin, false);
-        gpio_set_function(pin, GPIO_FUNC_PIO1);
-    }
-
-    // Output enable for the 74lvc245 buffers
-    gpio_pull_up(SEL1_PIN);
-    gpio_pull_up(SEL2_PIN);
-    gpio_pull_up(SEL3_PIN);
-
-    gpio_set_function(SEL1_PIN, GPIO_FUNC_PIO1);
-    gpio_set_function(SEL2_PIN, GPIO_FUNC_PIO1);
-    gpio_set_function(SEL3_PIN, GPIO_FUNC_PIO1);
-
-    // LED
-    gpio_init(LED_PIN);
-    gpio_set_dir(LED_PIN, GPIO_OUT);
 }
 
 void reset_vga80();
@@ -100,7 +74,7 @@ static semaphore_t video_initted;
 
 bool updated;
 
-volatile uint8_t memory[0x10000];
+// volatile uint8_t memory[0x10000];
 
 #define CSI "\x1b["
 
@@ -189,22 +163,22 @@ void update_debug_text()
         uint m = (mode + 1) / 2;
 #if (PLATFORM == PLATFORM_ATOM)
         snprintf(buffer, DEBUG_BUF_SIZE, "mode %x/%d %dx%d %s %d",
-                mode,
-                m,
-                get_width(mode),
-                get_height(mode),
-                is_colour(mode) ? "col" : "b&w",
-                bytes);
+                 mode,
+                 m,
+                 get_width(mode),
+                 get_height(mode),
+                 is_colour(mode) ? "col" : "b&w",
+                 bytes);
 #elif (PLATFORM == PLATFORM_DRAGON)
         snprintf(buffer, DEBUG_BUF_SIZE, "mode %x/%d %dx%d %s %d %04X %02X",
-                mode,
-                m,
-                get_width(mode),
-                get_height(mode),
-                is_colour(mode) ? "col" : "b&w",
-                bytes,
-                SAMBits,
-                artifact);
+                 mode,
+                 m,
+                 get_width(mode),
+                 get_height(mode),
+                 is_colour(mode) ? "col" : "b&w",
+                 bytes,
+                 SAMBits,
+                 artifact);
 #endif
         set_debug_text(buffer);
     }
@@ -220,7 +194,7 @@ bool is_command(char *cmd,
 {
     char *p = (char *)memory + CMD_BASE;
     *params=(char *)NULL;   
-    
+
     while (*cmd != 0)
     {
         if (*cmd++ != *p++)
@@ -238,9 +212,9 @@ bool is_command(char *cmd,
 }
 
 bool uint8_param(char *params,
-                int *output,
-                int min,
-                int max)
+                 int *output,
+                 int min,
+                 int max)
 {
     int try;
     if (sscanf(params, "%d", &try))
@@ -259,7 +233,7 @@ bool uint8_param(char *params,
 void switch_font(uint8_t new_font)
 {
     uint8_t font_range;
- 
+
     // make sure new fontno is valid.....
     fontno = (new_font < FONT_COUNT) ? new_font : DEFAULT_FONT;
 
@@ -336,8 +310,8 @@ void __no_inline_not_in_flash_func(main_loop())
             if ((RESET_VEC+1 == address) && (RESET_VEC == last))
             {
                 reset_flag = true;
-            }   
-            last = address; 
+            }
+            last = address;
         }
         else
         {
@@ -403,6 +377,7 @@ int main(void)
         vreg_set_voltage(VREG_VOLTAGE_1_25);
     }
     set_sys_clock_khz(sys_freq, true);
+    stdio_init_all();
 
     switch_font(DEFAULT_FONT);
 
@@ -414,7 +389,7 @@ int main(void)
         load_ee();
     }
 #endif
-    
+
     memset((char*)memory, 0, 0x10000);
     for (int i = GetVidMemBase(); i < GetVidMemBase() + 0x200; i++)
     {
@@ -442,18 +417,45 @@ int main(void)
     // wait for initialization of video to be complete
     sem_acquire_blocking(&video_initted);
 
-    //initialiseIO();
+    // set read and write permissions
+    memset((char *)permission, NO_ACCESS, 0x10000);
+    memset((char *)permission + FB_ADDR, WRITE_ONLY, VID_MEM_SIZE);
+    memset((char *)permission + PIA_ADDR, WRITE_ONLY, 0x10);
+    memset((char *)permission + COL80_BASE, READ_WRITE, 0x10);
 
-    uint offset = pio_add_program(pio, &test_program);
-    test_program_init(pio, 0, offset);
-    pio_sm_set_enabled(pio, 0, true);
+    // initialise the interface on PIO1
+    atom_if_init(pio1);
 
-    offset = pio_add_program(pio, &atomvga_out_program);
-    atomvga_out_program_init(pio, 1, offset);
-    pio_sm_set_enabled(pio, 1, true);
+    for (;;)
+    {
+        // loop outputing content of VDU at 1Hz
+        sleep_ms(1000);
+        char *buffer = (char *)&memory + 0x8000;
+        char buf[33];
+        //printf("\033[?25l\033[0;0H");
+        for (int row = 0; row < 16; row++)
+        {
+            for (int i = 0; i < 32; i++)
+            {
+                int x = (unsigned char)buffer[i + row * 32];
+                if (x < 0x80)
+                {
+                    x = x ^ 0x60;
+                }
+                x = x - 0x20;
+                if (x < ' ' || x > '~')
+                {
+                    x = '.';
+                }
+                buf[i] = x;
+            }
+            buf[32] = 0;
 
-    main_loop();
+            puts(buf);
+        }
+    }
 }
+
 
 #if (PLATFORM == PLATFORM_ATOM)
 void check_command()
@@ -600,7 +602,7 @@ void check_reset(void)
     {
         // back to 32 column mode
         reset_vga80();
-        
+
         // reset colours if ink and paper are the same
         if(ink == paper)
         {
@@ -681,7 +683,7 @@ uint16_t *do_text(scanvideo_scanline_buffer_t *buffer, uint relative_line_num, c
     uint sgidx = is_debug ? TEXT_INDEX : GetSAMSG();        // index into semigraphics table
     uint rows_per_char  = 12 / sg_bytes_row[sgidx];         // bytes per character space vertically
     uint8_t *fontdata = fonts[fontno].fontdata + sub_row;   // Local fontdata pointer
-    
+
     if (row < 16)
     {
         // Calc start address for this row
@@ -713,7 +715,7 @@ uint16_t *do_text(scanvideo_scanline_buffer_t *buffer, uint relative_line_num, c
                     if (LOWER_INVERT)
                     {
                         bg_colour = fg_colour;
-                        fg_colour = paper;    
+                        fg_colour = paper;
                     }
                 }
                 else if (inv)
@@ -762,7 +764,7 @@ uint16_t *do_text(scanvideo_scanline_buffer_t *buffer, uint relative_line_num, c
                 }
 
                 fg_colour = colour_palette_atom[colour_index];
-            
+
                 uint pix_row = (SG6_INDEX == sgidx) ? 2 - (sub_row / 4) : 1 - (sub_row / 6);
 
                 uint16_t pix0 = ((ch >> (pix_row * 2)) & 0x1) ? fg_colour : bg_colour;
@@ -785,7 +787,7 @@ void draw_color_bar(scanvideo_scanline_buffer_t *buffer)
     const uint line_num = scanvideo_scanline_number(buffer->scanline_id);
     uint16_t *p = (uint16_t *)buffer->data;
     int relative_line_num = line_num - vertical_offset;
-    uint16_t *art_palette = (1 == artifact) ? colour_palette_artifact1 : colour_palette_artifact2; 
+    uint16_t *art_palette = (1 == artifact) ? colour_palette_artifact1 : colour_palette_artifact2;
 
     if (line_num == 0)
     {
@@ -882,7 +884,7 @@ void draw_color_bar(scanvideo_scanline_buffer_t *buffer)
                         if (pixel_count == 256)
                         {
                             if (0 == artifact)
-                            {    
+                            {
                                 for (uint32_t mask = 0x80000000; mask > 0;)
                                 {
                                     uint16_t colour = (b & mask) ? fg : 0;
@@ -913,12 +915,12 @@ void draw_color_bar(scanvideo_scanline_buffer_t *buffer)
                                 {
                                     uint acol = (word >> 30) & 0b11;
                                     uint16_t colour = art_palette[acol];
-                                    
+
                                     *p++ = colour;
                                     *p++ = colour;
                                     *p++ = colour;
                                     *p++ = colour;
-                                
+
                                     word = word << 2;
                                 }
                             }
@@ -1060,7 +1062,7 @@ uint16_t *do_text_vga80(scanvideo_scanline_buffer_t *buffer, uint relative_line_
                 {
 #if (PLATFORM == PLATFORM_DRAGON)
                     ch ^= 0x60;
-#endif                    
+#endif
                     // Text
                     uint8_t b = fd[(ch & 0x7f) * 12];
                     if (ch >= 0x80)
@@ -1091,10 +1093,10 @@ uint16_t *do_text_vga80(scanvideo_scanline_buffer_t *buffer, uint relative_line_
             {
                 uint ch     = *char_addr++;
                 bool inv    = (ch & INV_MASK) ? true : false;
-            
+
 #if (PLATFORM == PLATFORM_DRAGON)
                 ch ^= 0x40;
-#endif                    
+#endif
                 uint8_t b = fd[(ch & 0x7f) * 12];
                 if (inv)
                 {

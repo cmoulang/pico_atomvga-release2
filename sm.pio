@@ -1,0 +1,87 @@
+/*
+ * PIO state machine programs for handling operations on the 6502 bus.
+ */
+
+// 6502 bus signals
+.define public PIN_A0 2         ; also A8 or D0 depending on mux settings
+.define public PIN_1MHZ 18
+.define public PIN_R_NW 19
+
+// mux control pins
+.define public PIN_MUX_ADD_LOW 28
+.define public PIN_MUX_ADD_HIGH 27
+.define public PIN_MUX_DATA 26
+
+// mux bit masks
+.define ADLO 0b011
+.define ADHI 0b101
+.define DATA 0b110
+.define NONE 0b111
+
+.define IRQ_ADHI_READY 4
+.define IRQ_WRITE 5
+
+.define DELAY 10
+
+; eight-bit bus read
+.program eb_read
+    ; x = permission lookup table address - set in C
+.side_set 3 opt
+.wrap_target
+loop:
+    wait    1 gpio, PIN_1MHZ 
+    wait    0 gpio, PIN_1MHZ            ; wait for 1 -> 0
+    in      x 16           side NONE    ; get upper 16 bits of lookup address
+    set     pindirs, 0     side NONE    ; reset the mux
+                    
+public set_delay:                       ; Data field of instruction - modified by c
+    set     y, DELAY                  
+delay:
+    jmp     y--, delay    side ADHI
+    irq     clear IRQ_ADHI_READY
+    in      pins, 8       side ADLO [1] ; read A8-A15 
+    nop                             [1] ; select A0-A7 on the mux
+    in      pins, 8                     ; read A0-A7, auto push
+    pull    block                       ; get the flags
+    out     y, 1          side NONE     ; get the read-enabled flag
+    jmp     pin, read  
+; Process 6502 write
+    out     y, 1                        ; get the not-write-enabled flag
+    pull    block                       ; discard the data from DMA
+    jmp     y--, loop
+    irq     clear IRQ_WRITE side DATA   ; it's a write
+    jmp     loop
+read:
+; Process 6502 read
+    pull    block                       ; get the data from DMA
+    jmp     !y, loop                    ; no read access to this address
+    out     pins 8 
+    mov     osr, !null
+    out     pindirs 8 side DATA
+.wrap
+
+.program eb_address
+    ; x = memory address - set in C
+.wrap_target
+loop:
+    in x 16
+    irq wait IRQ_ADHI_READY
+    in pins 8 [5]
+    in pins 8
+.wrap
+
+.program eb_write
+.wrap_target
+    irq wait IRQ_WRITE [1]
+    wait 1 gpio PIN_1MHZ
+    wait 0 gpio PIN_1MHZ            ; wait for 1 -> 0
+    in pins 8
+.wrap
+
+.program eb_set_pindirs
+.side_set 3 opt
+.wrap_target
+    irq wait 6
+    set pindirs, 31 side 7
+.wrap
+
