@@ -369,20 +369,24 @@ void print_str(int line_num, char *str)
 }
 
 
-int noof_trials=0;
-int in_pie=0;
-float calc_pi(int count)
+uint64_t noof_trials=0;
+uint64_t in_pie=0;
+double calc_pi(int count)
 {
-    for (int i=0; i<count; i++) {
-        float x = (float)rand() / RAND_MAX;
-        float y = (float)rand() / RAND_MAX;
-        if ((x * x) + (y*y) < 1.0)
+    static const uint64_t rand_max_squared = (uint64_t)RAND_MAX * RAND_MAX;
+    for (int i=0; i< count; i++)
+    {
+        uint64_t x = rand();
+        uint64_t y = rand();
+        x = x * x + y * y;
+        if (x < rand_max_squared)
         {
             in_pie++;
         }
     }
+
     noof_trials += count;
-    return 4.0 *  in_pie / noof_trials;
+    return (double)(4 *  in_pie) / noof_trials;
 }
 
 void demo_loop()
@@ -391,66 +395,7 @@ void demo_loop()
 
     for (;;)
     {
-        printf("pi = %8f\n", calc_pi(100000));
-    }
-
-    bool readable = false;
-    for (;;)
-    {
-        uint xxx = dma_channel_hw_addr(mem_rdata_chan)->read_addr;
-        // loop outputing content of VDU at 1Hz
-        sleep_ms(1);
-        int bffe = memory[0xBFFE];
-        puts((bffe & 0x2) ? "set" : "not set");
-        printf("%d %d\n", bffe, permission[0xBFFE]);
-        printf("%x %x rdata addr=%x\n", bffe, permission[0xBFFE], xxx);
-
-        int pdc = dma_channel_hw_addr(perm_data_chan)->read_addr;
-        int mrc = dma_channel_hw_addr(mem_rdata_chan)->read_addr;
-        int mwc = dma_channel_hw_addr(mem_wdata_chan)->write_addr;
-
-        printf("dma_channel_hw_addr(perm_data_chan)->read_addr  %x\n", pdc);
-        printf("dma_channel_hw_addr(mem_rdata_chan)->read_addr  %x\n", mrc);
-        printf("dma_channel_hw_addr(mem_wdata_chan)->write_addr %x\n", mwc);
-        if ((bffe & 0x2) && readable)
-        {
-            puts("Setting to NO ACCESS");
-            eb_set_perm(0xA00, EB_PERM_NO_ACCESS, 0xFF);
-            readable = false;
-        }
-
-        if (!(bffe & 0x2) && !readable)
-        {
-            puts("Setting to READ WRITE");
-            eb_set_perm(0xA00, EB_PERM_READ_WRITE, 0xFF);
-            readable = true;
-        }
-
-        continue;
-
-        char *buffer = (char *)&memory + 0x8000;
-        char buf[33];
-        // printf("\033[?25l\033[0;0H");
-        for (int row = 0; row < 16; row++)
-        {
-            for (int i = 0; i < 32; i++)
-            {
-                int x = (unsigned char)buffer[i + row * 32];
-                if (x < 0x80)
-                {
-                    x = x ^ 0x60;
-                }
-                x = x - 0x20;
-                if (x < ' ' || x > '~')
-                {
-                    x = '.';
-                }
-                buf[i] = x;
-            }
-            buf[32] = 0;
-
-            puts(buf);
-        }
+        printf("pi estimate = %.10f\n", calc_pi(500000));
     }
 }
 

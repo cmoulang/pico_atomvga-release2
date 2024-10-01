@@ -50,9 +50,9 @@ static void eb_read_init(PIO pio, uint sm, int address)
     for (int pin = PIN_MUX_DATA; pin < PIN_MUX_DATA + 3; pin++)
     {
         pio_gpio_init(pio, pin);
-       // gpio_set_pulls(pin, true, false);
+        // gpio_set_pulls(pin, true, false);
         gpio_set_slew_rate(pin, GPIO_SLEW_RATE_FAST);
-      //  gpio_set_drive_strength(pin, GPIO_DRIVE_STRENGTH_4MA);
+        // gpio_set_drive_strength(pin, GPIO_DRIVE_STRENGTH_4MA);
     }
 
     pio_sm_set_pins_with_mask(pio, sm,
@@ -140,7 +140,6 @@ static void eb_setup_dma(PIO pio, int eb_read_sm,
     channel_config_set_transfer_data_size(&c, DMA_SIZE_32);
     channel_config_set_read_increment(&c, false);
     channel_config_set_write_increment(&c, false);
-    channel_config_set_chain_to(&c, mem_address_chan);
 
     dma_channel_configure(
         perm_address_chan,
@@ -157,7 +156,6 @@ static void eb_setup_dma(PIO pio, int eb_read_sm,
     channel_config_set_transfer_data_size(&c, DMA_SIZE_32);
     channel_config_set_read_increment(&c, false);
     channel_config_set_write_increment(&c, false);
-    channel_config_set_chain_to(&c, mem_address_chan2);
 
     dma_channel_configure(
         mem_address_chan,
@@ -190,8 +188,9 @@ static void eb_setup_dma(PIO pio, int eb_read_sm,
     channel_config_set_transfer_data_size(&c, DMA_SIZE_8);
     channel_config_set_read_increment(&c, false);
     channel_config_set_write_increment(&c, false);
+    channel_config_set_chain_to(&c, mem_address_chan);
 
-        dma_channel_configure(
+    dma_channel_configure(
         perm_data_chan,
         &c,
         &pio->txf[eb_read_sm],
@@ -201,11 +200,13 @@ static void eb_setup_dma(PIO pio, int eb_read_sm,
 
     // Copies data from the memory to fifo
     c = dma_channel_get_default_config(mem_rdata_chan);
- channel_config_set_high_priority(&c, true);
+    channel_config_set_high_priority(&c, true);
     channel_config_set_dreq(&c, pio_get_dreq(pio, eb_read_sm, true));
     channel_config_set_transfer_data_size(&c, DMA_SIZE_8);
     channel_config_set_read_increment(&c, false);
     channel_config_set_write_increment(&c, false);
+    channel_config_set_chain_to(&c, mem_address_chan2);
+
     dma_channel_configure(
         mem_rdata_chan,
         &c,
