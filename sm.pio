@@ -21,7 +21,8 @@
 .define IRQ_ADHI_READY 4
 .define IRQ_WRITE 5
 
-.define DELAY 10
+.define ADDR_DELAY 9
+.define MUX_DELAY 4
 
 ; eight-bit bus read
 .program eb_read
@@ -31,30 +32,32 @@
 loop:
     wait    1 gpio, PIN_1MHZ 
     wait    0 gpio, PIN_1MHZ            ; wait for 1 -> 0
-    in      x 16           side NONE    ; get upper 16 bits of lookup address
-    set     pindirs, 0     side NONE    ; reset the mux
+    in      x 16                    [1] ; get upper 16 bits of lookup address
+    set     pindirs, 0    side NONE     ; reset the mux
                     
 public set_delay:                       ; Data field of instruction - modified by c
-    set     y, DELAY                  
+    set     y, ADDR_DELAY side ADHI            
 delay:
-    jmp     y--, delay    side ADHI
-    irq     clear IRQ_ADHI_READY
-    in      pins, 8       side ADLO [1] ; read A8-A15 
-    nop                             [1] ; select A0-A7 on the mux
+    jmp     y--, delay    
+    irq     clear IRQ_ADHI_READY    [1]
+    in      pins, 8       side NONE     ; read A8-A15 
+    set     y, MUX_DELAY  side ADLO
+delay2:
+    jmp     y--, delay2
     in      pins, 8                     ; read A0-A7, auto push
     pull    block                       ; get the flags
-    out     y, 1          side NONE     ; get the read-enabled flag
-    jmp     pin, read  
+    out     y, 1                        ; get the read-enabled flag
+    jmp     pin, read    side NONE
 ; Process 6502 write
     out     y, 1                        ; get the not-write-enabled flag
     pull    block                       ; discard the data from DMA
-    jmp     y--, loop
+    jmp     y--, loop                   ; jmp if no write access to this address
     irq     clear IRQ_WRITE side DATA   ; it's a write
     jmp     loop
 read:
 ; Process 6502 read
     pull    block                       ; get the data from DMA
-    jmp     !y, loop                    ; no read access to this address
+    jmp     !y, loop                    ; jmp if no read access to this address
     out     pins 8 
     mov     osr, !null
     out     pindirs 8 side DATA
@@ -66,8 +69,8 @@ read:
 loop:
     in x 16
     irq wait IRQ_ADHI_READY
-    in pins 8 [5]
-    in pins 8
+    in pins 8 [MUX_DELAY+2]
+    in pins 8                       ; auto push
 .wrap
 
 .program eb_write
@@ -77,11 +80,3 @@ loop:
     wait 0 gpio PIN_1MHZ            ; wait for 1 -> 0
     in pins 8
 .wrap
-
-.program eb_set_pindirs
-.side_set 3 opt
-.wrap_target
-    irq wait 6
-    set pindirs, 31 side 7
-.wrap
-

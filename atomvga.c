@@ -36,12 +36,11 @@
 
 // PIA and frambuffer address moved into platform.h -- PHS
 
-
 // #define vga_mode vga_mode_320x240_60
 #define vga_mode vga_mode_640x480_60
 
 static PIO pio = pio1;
-//static uint8_t *fontdata = fontdata_6847;
+// static uint8_t *fontdata = fontdata_6847;
 
 static uint32_t vga80_lut[128 * 4];
 
@@ -136,7 +135,7 @@ void set_debug_text(char *text)
             c = c ^ 0x60;
         }
 #else
-        if((c >= 0x20) && (c <= 0x3F))
+        if ((c >= 0x20) && (c <= 0x3F))
         {
             c = c + 0x40;
         }
@@ -149,7 +148,7 @@ void set_debug_text(char *text)
     }
 }
 
-#define DEBUG_BUF_SIZE  80
+#define DEBUG_BUF_SIZE 80
 
 void update_debug_text()
 {
@@ -193,7 +192,7 @@ bool is_command(char *cmd,
                 char **params)
 {
     char *p = (char *)memory + CMD_BASE;
-    *params=(char *)NULL;   
+    *params = (char *)NULL;
 
     while (*cmd != 0)
     {
@@ -243,12 +242,12 @@ void switch_font(uint8_t new_font)
     max_lower = (font_range < LOWER_RANGE) ? LOWER_START + font_range : LOWER_END;
 }
 
-void switch_colour(uint8_t          newcolour,
+void switch_colour(uint8_t newcolour,
                    volatile uint16_t *tochange)
 {
     if (newcolour < NO_COLOURS)
     {
-        *tochange=colour_palette_atom[newcolour];
+        *tochange = colour_palette_atom[newcolour];
     }
 }
 
@@ -282,7 +281,7 @@ void __no_inline_not_in_flash_func(main_loop())
 
 void __no_inline_not_in_flash_func(main_loop())
 {
-    static uint16_t    last = 0;
+    static uint16_t last = 0;
 
     while (true)
     {
@@ -307,7 +306,7 @@ void __no_inline_not_in_flash_func(main_loop())
             }
 
             // Check for reset vector fetch, if so flag reset
-            if ((RESET_VEC+1 == address) && (RESET_VEC == last))
+            if ((RESET_VEC + 1 == address) && (RESET_VEC == last))
             {
                 reset_flag = true;
             }
@@ -324,8 +323,8 @@ void __no_inline_not_in_flash_func(main_loop())
             // Update SAM bits when written to
             if ((address >= SAM_BASE) && (address <= SAM_END))
             {
-                uint8_t     sam_data = GetSAMData(address);
-                uint16_t    sam_mask = GetSAMDataMask(address);
+                uint8_t sam_data = GetSAMData(address);
+                uint16_t sam_mask = GetSAMDataMask(address);
 
                 if (sam_data)
                 {
@@ -345,17 +344,17 @@ void __no_inline_not_in_flash_func(main_loop())
 
             if (DRAGON_INK_ADDR == address)
             {
-                switch_colour(data,&ink);
+                switch_colour(data, &ink);
             }
 
             if (DRAGON_PAPER_ADDR == address)
             {
-                switch_colour(data,&paper);
+                switch_colour(data, &paper);
             }
 
             if (DRAGON_INKALT_ADDR == address)
             {
-                switch_colour(data,&ink_alt);
+                switch_colour(data, &ink_alt);
             }
 #endif
         }
@@ -363,76 +362,75 @@ void __no_inline_not_in_flash_func(main_loop())
 }
 #endif
 
-void print_str(int line_num, char* str)
+void print_str(int line_num, char *str)
 {
     set_debug_text(str);
-    memcpy((char *)(memory + GetVidMemBase() + 0x020*line_num), debug_text, 32);
+    memcpy((char *)(memory + GetVidMemBase() + 0x020 * line_num), debug_text, 32);
 }
 
-int main(void)
+
+int noof_trials=0;
+int in_pie=0;
+float calc_pi(int count)
 {
-    uint sys_freq = 250000;
-    if (sys_freq > 250000)
-    {
-        vreg_set_voltage(VREG_VOLTAGE_1_25);
+    for (int i=0; i<count; i++) {
+        float x = (float)rand() / RAND_MAX;
+        float y = (float)rand() / RAND_MAX;
+        if ((x * x) + (y*y) < 1.0)
+        {
+            in_pie++;
+        }
     }
-    set_sys_clock_khz(sys_freq, true);
-    stdio_init_all();
+    noof_trials += count;
+    return 4.0 *  in_pie / noof_trials;
+}
 
-    switch_font(DEFAULT_FONT);
-
-#if (PLATFORM == PLATFORM_DRAGON)
-    init_ee();
-    read_ee(EE_ADDRESS,EE_AUTOLOAD,(uint8_t *)&autoload);
-    if(AUTO_ON == autoload)
-    {
-        load_ee();
-    }
-#endif
-
-    memset((char*)memory, 0, 0x10000);
-    for (int i = GetVidMemBase(); i < GetVidMemBase() + 0x200; i++)
-    {
-        memory[i] = VDG_SPACE;
-    }
-
-    char mess[32];
-
-    // Display message and build date/time
-    print_str(4, DEBUG_MESS);
-    print_str(5, __DATE__ " " __TIME__);
-    snprintf(mess, 32, "BASE=%04X, PIA=%04X", GetVidMemBase(), PIA_ADDR);
-    print_str(6, mess);
-#if (R65C02 == 1)
-    print_str(7, "R65C02 VERSION");
-#endif
-
-
-    // create a semaphore to be posted when video init is complete
-    sem_init(&video_initted, 0, 1);
-
-    // launch all the video on core 1, so it isn't affected by USB handling on core 0
-    multicore_launch_core1(core1_func);
-
-    // wait for initialization of video to be complete
-    sem_acquire_blocking(&video_initted);
-
-    // set read and write permissions
-    memset((char *)permission, NO_ACCESS, 0x10000);
-    memset((char *)permission + FB_ADDR, WRITE_ONLY, VID_MEM_SIZE);
-    memset((char *)permission + PIA_ADDR, WRITE_ONLY, 0x10);
-    memset((char *)permission + COL80_BASE, READ_WRITE, 0x10);
-
-    // initialise the interface on PIO1
-    atom_if_init(pio1);
+void demo_loop()
+{
+    puts(__DATE__ " " __TIME__);
 
     for (;;)
     {
+        printf("pi = %8f\n", calc_pi(100000));
+    }
+
+    bool readable = false;
+    for (;;)
+    {
+        uint xxx = dma_channel_hw_addr(mem_rdata_chan)->read_addr;
         // loop outputing content of VDU at 1Hz
-        sleep_ms(1000);
+        sleep_ms(1);
+        int bffe = memory[0xBFFE];
+        puts((bffe & 0x2) ? "set" : "not set");
+        printf("%d %d\n", bffe, permission[0xBFFE]);
+        printf("%x %x rdata addr=%x\n", bffe, permission[0xBFFE], xxx);
+
+        int pdc = dma_channel_hw_addr(perm_data_chan)->read_addr;
+        int mrc = dma_channel_hw_addr(mem_rdata_chan)->read_addr;
+        int mwc = dma_channel_hw_addr(mem_wdata_chan)->write_addr;
+
+        printf("dma_channel_hw_addr(perm_data_chan)->read_addr  %x\n", pdc);
+        printf("dma_channel_hw_addr(mem_rdata_chan)->read_addr  %x\n", mrc);
+        printf("dma_channel_hw_addr(mem_wdata_chan)->write_addr %x\n", mwc);
+        if ((bffe & 0x2) && readable)
+        {
+            puts("Setting to NO ACCESS");
+            eb_set_perm(0xA00, EB_PERM_NO_ACCESS, 0xFF);
+            readable = false;
+        }
+
+        if (!(bffe & 0x2) && !readable)
+        {
+            puts("Setting to READ WRITE");
+            eb_set_perm(0xA00, EB_PERM_READ_WRITE, 0xFF);
+            readable = true;
+        }
+
+        continue;
+
         char *buffer = (char *)&memory + 0x8000;
         char buf[33];
-        //printf("\033[?25l\033[0;0H");
+        // printf("\033[?25l\033[0;0H");
         for (int row = 0; row < 16; row++)
         {
             for (int i = 0; i < 32; i++)
@@ -456,75 +454,134 @@ int main(void)
     }
 }
 
+int main(void)
+{
+    uint sys_freq = 250000;
+    if (sys_freq > 250000)
+    {
+        vreg_set_voltage(VREG_VOLTAGE_1_25);
+    }
+    set_sys_clock_khz(sys_freq, true);
+    stdin_uart_init();
+
+    switch_font(DEFAULT_FONT);
+
+#if (PLATFORM == PLATFORM_DRAGON)
+    init_ee();
+    read_ee(EE_ADDRESS, EE_AUTOLOAD, (uint8_t *)&autoload);
+    if (AUTO_ON == autoload)
+    {
+        load_ee();
+    }
+#endif
+
+    memset((char *)memory, 0, 0x10000);
+    for (int i = GetVidMemBase(); i < GetVidMemBase() + 0x200; i++)
+    {
+        memory[i] = VDG_SPACE;
+    }
+
+    char mess[32];
+
+    // Display message and build date/time
+    print_str(4, DEBUG_MESS);
+    print_str(5, __DATE__ " " __TIME__);
+    snprintf(mess, 32, "BASE=%04X, PIA=%04X", GetVidMemBase(), PIA_ADDR);
+    print_str(6, mess);
+#if (R65C02 == 1)
+    print_str(7, "R65C02 VERSION");
+#endif
+
+    // create a semaphore to be posted when video init is complete
+    sem_init(&video_initted, 0, 1);
+
+    // launch all the video on core 1, so it isn't affected by USB handling on core 0
+    multicore_launch_core1(core1_func);
+
+    // // wait for initialization of video to be complete
+    sem_acquire_blocking(&video_initted);
+
+    // set read and write permissions
+    eb_set_perm(0, EB_PERM_NO_ACCESS, 0x10000);
+    eb_set_perm(FB_ADDR, EB_PERM_WRITE_ONLY, VID_MEM_SIZE);
+    eb_set_perm(COL80_BASE, EB_PERM_READ_WRITE, 16);
+    eb_set_perm_byte(PIA_ADDR, EB_PERM_WRITE_ONLY);
+    eb_set_perm(0xA00, EB_PERM_READ_WRITE, 0x100);
+ 
+    // start the DMA interface on PIO1
+    atom_if_init(pio1);
+
+    demo_loop();
+}
 
 #if (PLATFORM == PLATFORM_ATOM)
 void check_command()
 {
-    char    *params = (char *)NULL;
+    char *params = (char *)NULL;
     int temp;
 
-    if (is_command("DEBUG",&params))
+    if (is_command("DEBUG", &params))
     {
         debug = true;
         ClearCommand();
     }
-    else if (is_command("NODEBUG",&params))
+    else if (is_command("NODEBUG", &params))
     {
         debug = false;
         ClearCommand();
     }
-    else if (is_command("LOWER",&params))
+    else if (is_command("LOWER", &params))
     {
         support_lower = true;
         ClearCommand();
     }
-    else if (is_command("NOLOWER",&params))
+    else if (is_command("NOLOWER", &params))
     {
         support_lower = false;
         ClearCommand();
     }
-    else if (is_command("CHARSET",&params))
+    else if (is_command("CHARSET", &params))
     {
-        temp=fontno;
-        if (uint8_param(params,&temp,0,FONT_COUNT-1))
+        temp = fontno;
+        if (uint8_param(params, &temp, 0, FONT_COUNT - 1))
         {
             switch_font(temp);
         }
         ClearCommand();
     }
-    else if (is_command("FG",&params))
+    else if (is_command("FG", &params))
     {
-        if (uint8_param(params,&temp,0,NO_COLOURS-1))
+        if (uint8_param(params, &temp, 0, NO_COLOURS - 1))
         {
-            switch_colour(temp,&ink);        
+            switch_colour(temp, &ink);
         }
         ClearCommand();
     }
-    else if (is_command("FGA",&params))
+    else if (is_command("FGA", &params))
     {
-        if (uint8_param(params,&temp,0,NO_COLOURS-1))
+        if (uint8_param(params, &temp, 0, NO_COLOURS - 1))
         {
-            switch_colour(temp,&ink_alt);
+            switch_colour(temp, &ink_alt);
         }
         ClearCommand();
     }
-    else if (is_command("BG",&params))
+    else if (is_command("BG", &params))
     {
-        if (uint8_param(params,&temp,0,NO_COLOURS-1))
+        if (uint8_param(params, &temp, 0, NO_COLOURS - 1))
         {
-            switch_colour(temp,&paper);
+            switch_colour(temp, &paper);
         }
         ClearCommand();
     }
-    else if (is_command("ARTI",&params))
+    else if (is_command("ARTI", &params))
     {
-        if (uint8_param(params,&temp,0,2))
+        if (uint8_param(params, &temp, 0, 2))
         {
             artifact = temp;
         }
         ClearCommand();
     }
-    else if (is_command("80COL",&params))
+    else if (is_command("80COL", &params))
     {
         memory[COL80_BASE] = COL80_ON;
         ClearCommand();
@@ -534,15 +591,15 @@ void check_command()
 
 void save_ee(void)
 {
-    if (0 <= write_ee(EE_ADDRESS,EE_AUTOLOAD,autoload))
+    if (0 <= write_ee(EE_ADDRESS, EE_AUTOLOAD, autoload))
     {
-        write_ee(EE_ADDRESS,EE_FONTNO,fontno);
-        write_ee_bytes(EE_ADDRESS,EE_INK,(uint8_t *)&ink,sizeof(ink));
-        write_ee_bytes(EE_ADDRESS,EE_PAPER,(uint8_t *)&paper,sizeof(paper));
-        write_ee_bytes(EE_ADDRESS,EE_INK_ALT,(uint8_t *)&ink_alt,sizeof(ink_alt));
-        write_ee(EE_ADDRESS,EE_ISLOWER,support_lower);
+        write_ee(EE_ADDRESS, EE_FONTNO, fontno);
+        write_ee_bytes(EE_ADDRESS, EE_INK, (uint8_t *)&ink, sizeof(ink));
+        write_ee_bytes(EE_ADDRESS, EE_PAPER, (uint8_t *)&paper, sizeof(paper));
+        write_ee_bytes(EE_ADDRESS, EE_INK_ALT, (uint8_t *)&ink_alt, sizeof(ink_alt));
+        write_ee(EE_ADDRESS, EE_ISLOWER, support_lower);
 
-        printf("fontno=%02X, ink=%04X, paper=%04X, alt_ink=%04X, lower=%d\n",fontno,ink,paper,ink_alt,support_lower);
+        printf("fontno=%02X, ink=%04X, paper=%04X, alt_ink=%04X, lower=%d\n", fontno, ink, paper, ink_alt, support_lower);
     }
 }
 
@@ -550,23 +607,23 @@ void load_ee(void)
 {
     uint8_t tempb;
 
-    if(0 <= read_ee(EE_ADDRESS,EE_AUTOLOAD,(uint8_t *)&autoload))
+    if (0 <= read_ee(EE_ADDRESS, EE_AUTOLOAD, (uint8_t *)&autoload))
     {
-        read_ee(EE_ADDRESS,EE_FONTNO,&tempb);
+        read_ee(EE_ADDRESS, EE_FONTNO, &tempb);
         switch_font(tempb);
 
-        read_ee_bytes(EE_ADDRESS,EE_INK,(uint8_t *)&ink,sizeof(ink));
-        read_ee_bytes(EE_ADDRESS,EE_PAPER,(uint8_t *)&paper,sizeof(paper));
-        read_ee_bytes(EE_ADDRESS,EE_INK_ALT,(uint8_t *)&ink_alt,sizeof(ink_alt));
-        read_ee(EE_ADDRESS,EE_ISLOWER,(uint8_t *)&support_lower);
+        read_ee_bytes(EE_ADDRESS, EE_INK, (uint8_t *)&ink, sizeof(ink));
+        read_ee_bytes(EE_ADDRESS, EE_PAPER, (uint8_t *)&paper, sizeof(paper));
+        read_ee_bytes(EE_ADDRESS, EE_INK_ALT, (uint8_t *)&ink_alt, sizeof(ink_alt));
+        read_ee(EE_ADDRESS, EE_ISLOWER, (uint8_t *)&support_lower);
 
-        printf("fontno=%02X, ink=%04X, paper=%04X, alt_ink=%04X, lower=%d\n",fontno,ink,paper,ink_alt,support_lower);
+        printf("fontno=%02X, ink=%04X, paper=%04X, alt_ink=%04X, lower=%d\n", fontno, ink, paper, ink_alt, support_lower);
     }
 }
 
 void set_auto(uint8_t state)
 {
-    write_ee(EE_ADDRESS,EE_AUTOLOAD,state);
+    write_ee(EE_ADDRESS, EE_AUTOLOAD, state);
 }
 
 void check_command()
@@ -574,24 +631,46 @@ void check_command()
     static uint8_t oldcommand = 0;
     uint8_t command = memory[DRAGON_CMD_ADDR];
 
-    if(command != oldcommand)
+    if (command != oldcommand)
     {
         switch (command)
         {
-            case DRAGON_CMD_DEBUG   : debug = true; break;
-            case DRAGON_CMD_NODEBUG : debug = false; break;
-            case DRAGON_CMD_LOWER   : support_lower = true; break;
-            case DRAGON_CMD_NOLOWER : support_lower = false; break;
-            case DRAGON_CMD_ARTIOFF : artifact = 0; break;
-            case DRAGON_CMD_ARTI1   : artifact = 1; break;
-            case DRAGON_CMD_ARTI2   : artifact = 2; break;
-            case DRAGON_CMD_SAVEEE  : save_ee(); break;
-            case DRAGON_CMD_LOADEE  : load_ee(); break;
-            case DRAGON_CMD_AUTOOFF : set_auto(AUTO_OFF); break;
-            case DRAGON_CMD_AUTOON  : set_auto(AUTO_ON); break;
+        case DRAGON_CMD_DEBUG:
+            debug = true;
+            break;
+        case DRAGON_CMD_NODEBUG:
+            debug = false;
+            break;
+        case DRAGON_CMD_LOWER:
+            support_lower = true;
+            break;
+        case DRAGON_CMD_NOLOWER:
+            support_lower = false;
+            break;
+        case DRAGON_CMD_ARTIOFF:
+            artifact = 0;
+            break;
+        case DRAGON_CMD_ARTI1:
+            artifact = 1;
+            break;
+        case DRAGON_CMD_ARTI2:
+            artifact = 2;
+            break;
+        case DRAGON_CMD_SAVEEE:
+            save_ee();
+            break;
+        case DRAGON_CMD_LOADEE:
+            load_ee();
+            break;
+        case DRAGON_CMD_AUTOOFF:
+            set_auto(AUTO_OFF);
+            break;
+        case DRAGON_CMD_AUTOON:
+            set_auto(AUTO_ON);
+            break;
         }
 
-        oldcommand=command;
+        oldcommand = command;
     }
 }
 #endif
@@ -604,7 +683,7 @@ void check_reset(void)
         reset_vga80();
 
         // reset colours if ink and paper are the same
-        if(ink == paper)
+        if (ink == paper)
         {
             ink = DEF_INK;
             paper = DEF_PAPER;
@@ -678,11 +757,11 @@ uint16_t *do_text(scanvideo_scanline_buffer_t *buffer, uint relative_line_num, c
     // Each char is 12 x 8 pixels
     // Note we divide ralative_line_number by 2 as we are double scanning each 6847 line to
     // 2 VGA lines.
-    uint row = (relative_line_num / 2) / 12;                // char row
-    uint sub_row = (relative_line_num / 2) % 12;            // scanline within current char row
-    uint sgidx = is_debug ? TEXT_INDEX : GetSAMSG();        // index into semigraphics table
-    uint rows_per_char  = 12 / sg_bytes_row[sgidx];         // bytes per character space vertically
-    uint8_t *fontdata = fonts[fontno].fontdata + sub_row;   // Local fontdata pointer
+    uint row = (relative_line_num / 2) / 12;              // char row
+    uint sub_row = (relative_line_num / 2) % 12;          // scanline within current char row
+    uint sgidx = is_debug ? TEXT_INDEX : GetSAMSG();      // index into semigraphics table
+    uint rows_per_char = 12 / sg_bytes_row[sgidx];        // bytes per character space vertically
+    uint8_t *fontdata = fonts[fontno].fontdata + sub_row; // Local fontdata pointer
 
     if (row < 16)
     {
@@ -693,8 +772,8 @@ uint16_t *do_text(scanvideo_scanline_buffer_t *buffer, uint relative_line_num, c
         {
             // Get character data from RAM and extract inv,ag,int/ext
             uint ch = vdu_base[vdu_address + col];
-            bool inv    = (ch & INV_MASK) ? true : false;
-            bool as     = (ch & AS_MASK) ? true : false;
+            bool inv = (ch & INV_MASK) ? true : false;
+            bool as = (ch & AS_MASK) ? true : false;
             bool intext = GetIntExt(ch);
 
             uint16_t fg_colour;
@@ -702,7 +781,7 @@ uint16_t *do_text(scanvideo_scanline_buffer_t *buffer, uint relative_line_num, c
 
             // Deal with text mode first as we can decide this purely on the setting of the
             // alpha/semi bit.
-            if(!as)
+            if (!as)
             {
                 uint8_t b = fontdata[(ch & 0x3f) * 12];
 
@@ -747,16 +826,16 @@ uint16_t *do_text(scanvideo_scanline_buffer_t *buffer, uint relative_line_num, c
                     }
                 }
             }
-            else        // Semigraphics
+            else // Semigraphics
             {
                 uint colour_index;
 
                 if (as && intext)
                 {
-                    sgidx = SG6_INDEX;           // SG6
+                    sgidx = SG6_INDEX; // SG6
                 }
 
-                colour_index = (SG6_INDEX == sgidx) ? (ch & SG6_COL_MASK) >> SG6_COL_SHIFT :  (ch & SG4_COL_MASK) >> SG4_COL_SHIFT;
+                colour_index = (SG6_INDEX == sgidx) ? (ch & SG6_COL_MASK) >> SG6_COL_SHIFT : (ch & SG4_COL_MASK) >> SG4_COL_SHIFT;
 
                 if (alt_colour() && (SG6_INDEX == sgidx))
                 {
@@ -817,18 +896,18 @@ void draw_color_bar(scanvideo_scanline_buffer_t *buffer)
         // Add left border
         p = add_border(p, border_colour, horizontal_offset - 1);
 
-        if (line_num >= debug_start && line_num < debug_end)    // Debug in 'text' mode
+        if (line_num >= debug_start && line_num < debug_end) // Debug in 'text' mode
         {
             p = do_text(buffer, line_num - debug_start, debug_text, p, true);
         }
-        else if (!(mode & 1))                                   // Alphanumeric or Semigraphics
+        else if (!(mode & 1)) // Alphanumeric or Semigraphics
         {
             if (relative_line_num >= 0 && relative_line_num < (16 * 24))
             {
                 p = do_text(buffer, relative_line_num, (char *)memory + GetVidMemBase(), p, false);
             }
         }
-        else                                                    // Grapics modes
+        else // Grapics modes
         {
             const int height = get_height(mode);
             relative_line_num = (relative_line_num / 2) * height / 192;
@@ -853,7 +932,7 @@ void draw_color_bar(scanvideo_scanline_buffer_t *buffer)
                             word = __builtin_bswap32(*bp++);
                         }
                         uint x = (word >> 30) & 0b11;
-                        uint16_t colour=palette[x];
+                        uint16_t colour = palette[x];
                         if (pixel_count == 128)
                         {
                             *p++ = colour;
@@ -911,7 +990,7 @@ void draw_color_bar(scanvideo_scanline_buffer_t *buffer)
                             else
                             {
                                 uint32_t word = b;
-                                for (uint apixel=0; apixel < 16; apixel++)
+                                for (uint apixel = 0; apixel < 16; apixel++)
                                 {
                                     uint acol = (word >> 30) & 0b11;
                                     uint16_t colour = art_palette[acol];
@@ -983,11 +1062,10 @@ void draw_color_bar(scanvideo_scanline_buffer_t *buffer)
 
 void reset_vga80()
 {
-    memory[COL80_BASE] = COL80_OFF;     // Normal text mode (vga80 off)
-    memory[COL80_FG] = 0xB2;            // Foreground Green
-    memory[COL80_BG] = 0x00;            // Background Black
+    memory[COL80_BASE] = COL80_OFF; // Normal text mode (vga80 off)
+    memory[COL80_FG] = 0xB2;        // Foreground Green
+    memory[COL80_BG] = 0x00;        // Background Black
     memory[COL80_STAT] = 0x12;
-    
 }
 
 void initialize_vga80()
@@ -1025,9 +1103,9 @@ uint16_t *do_text_vga80(scanvideo_scanline_buffer_t *buffer, uint relative_line_
         uint vga80_ctrl2 = memory[COL80_BG];
 
         *p++ = COMPOSABLE_RAW_RUN;
-        *p++ = BLACK;       // Extra black pixel
-        *p++ = 642 - 3;     //
-        *p++ = BLACK;       // Extra black pixel
+        *p++ = BLACK;   // Extra black pixel
+        *p++ = 642 - 3; //
+        *p++ = BLACK;   // Extra black pixel
 
         // For efficiency, compute two pixels at a time using a lookup table
         // p is now on a word boundary due to the extra pixels above
@@ -1091,8 +1169,8 @@ uint16_t *do_text_vga80(scanvideo_scanline_buffer_t *buffer, uint relative_line_
             uint32_t *vp = vga80_lut + (attr << 2);
             for (int col = 0; col < 80; col++)
             {
-                uint ch     = *char_addr++;
-                bool inv    = (ch & INV_MASK) ? true : false;
+                uint ch = *char_addr++;
+                bool inv = (ch & INV_MASK) ? true : false;
 
 #if (PLATFORM == PLATFORM_DRAGON)
                 ch ^= 0x40;
