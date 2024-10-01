@@ -1,5 +1,6 @@
 *~
 #*
-build/
+build/*
 build2/
 .vscode/
+!build/atomvga_r65c02.uf2
