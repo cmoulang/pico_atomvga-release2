@@ -1,5 +1,10 @@
 This is an experimental DMA version of the pico-atom-VGA firmware.
 
+The new files are:
+
+    sm.pio - the pio state machines
+    atom_if.h - the pio and DMA configuration functions
+
 A lookup table contains the read/write flags for each 6502 address. For example:
 
     // initially set all addresses to NO_ACCESS
@@ -11,6 +16,8 @@ A lookup table contains the read/write flags for each 6502 address. For example:
     // allow write access to PIA address
     eb_set_perm_byte(PIA_ADDR, EB_PERM_WRITE_ONLY);
 
-This works reliably at 1MHz and 2MHz on a 65C02
+This works 100% reliably at 1MHz and 2MHz on a 65C02
 
-In the initial version a whole CPU was used to handle the interface to the PIO - it now calculates pi and outputs it's latests guess to the serial port once a second or so.
+This does not work at 4MHz - yet.
+
+In the initial version a whole CPU was used to handle the interface to the PIO - it now calculates pi and outputs it's latest guess to the serial port once a second or so.
