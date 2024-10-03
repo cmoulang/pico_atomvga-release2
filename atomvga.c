@@ -39,7 +39,7 @@
 // #define vga_mode vga_mode_320x240_60
 #define vga_mode vga_mode_640x480_60
 
-static PIO pio = pio1;
+//static PIO pio = pio1;
 // static uint8_t *fontdata = fontdata_6847;
 
 static uint32_t vga80_lut[128 * 4];
@@ -85,16 +85,16 @@ void load_ee(void);
 int get_mode()
 {
 #if (PLATFORM == PLATFORM_ATOM)
-    return (memory[PIA_ADDR] & 0xf0) >> 4;
+    return (memory_get(PIA_ADDR) & 0xf0) >> 4;
 #elif (PLATFORM == PLATFORM_DRAGON)
     return ((memory[PIA_ADDR] & 0x80) >> 7) | ((memory[PIA_ADDR] & 0x70) >> 3);
 #endif
 }
 
-inline bool alt_colour()
+static inline bool alt_colour()
 {
 #if (PLATFORM == PLATFORM_ATOM)
-    return !!(memory[PIA_ADDR + 2] & 0x8);
+    return !!(memory_get(PIA_ADDR + 2) & 0x8);
 #elif (PLATFORM == PLATFORM_DRAGON)
     return (memory[PIA_ADDR] & 0x08);
 #endif
@@ -191,7 +191,11 @@ void update_debug_text()
 bool is_command(char *cmd,
                 char **params)
 {
-    char *p = (char *)memory + CMD_BASE;
+    const size_t buff_size = 30;
+    char buffer[buff_size];
+    memory_get_chars(buffer, buff_size, CMD_BASE);
+//    char *p = (char *)memory + CMD_BASE;
+    char *p = (char *)buffer;
     *params = (char *)NULL;
 
     while (*cmd != 0)
@@ -256,26 +260,26 @@ volatile bool support_lower = false;
 #if (R65C02 == 1)
 void __no_inline_not_in_flash_func(main_loop())
 {
-    while (true)
-    {
-        // Get event from SM 0
-        u_int32_t reg = pio_sm_get_blocking(pio, 0);
+    // while (true)
+    // {
+    //     // Get event from SM 0
+    //     u_int32_t reg = pio_sm_get_blocking(pio, 0);
 
-        // Is it a read to the COL80 I/O space?
-        if ((reg & (0x1000000 | COL80_MASK)) == COL80_BASE)
-        {
-            // read
-            pio_sm_put(pio, 1, 0xFF00 | memory[reg]);
-        }
-        else if (reg & 0x1000000)
-        {
-            // write
-            u_int16_t address = reg & 0xFFFF;
+    //     // Is it a read to the COL80 I/O space?
+    //     if ((reg & (0x1000000 | COL80_MASK)) == COL80_BASE)
+    //     {
+    //         // read
+    //         pio_sm_put(pio, 1, 0xFF00 | memory[reg]);
+    //     }
+    //     else if (reg & 0x1000000)
+    //     {
+    //         // write
+    //         u_int16_t address = reg & 0xFFFF;
 
-            u_int8_t data = (reg & 0xFF0000) >> 16;
-            memory[address] = data;
-        }
-    }
+    //         u_int8_t data = (reg & 0xFF0000) >> 16;
+    //         memory[address] = data;
+    //     }
+    // }
 }
 #else
 
@@ -365,7 +369,8 @@ void __no_inline_not_in_flash_func(main_loop())
 void print_str(int line_num, char *str)
 {
     set_debug_text(str);
-    memcpy((char *)(memory + GetVidMemBase() + 0x020 * line_num), debug_text, 32);
+    // memcpy((char *)(memory + GetVidMemBase() + 0x020 * line_num), debug_text, 32);
+    memory_set_chars(GetVidMemBase() + 0x020 * line_num, debug_text, 32);
 }
 
 
@@ -396,6 +401,10 @@ void demo_loop()
     for (;;)
     {
         printf("pi estimate = %.10f\n", calc_pi(500000));
+        // uint x = (uint)dma_channel_hw_addr(read_data_chan)->read_addr;
+        // printf("%X %X\n", x, (x - 0x20010000) / 2);
+        // printf("%X\n",(uint)dma_channel_hw_addr(read_data_chan)->read_addr);
+        // printf("%X\n",(uint)dma_channel_hw_addr(write_data_chan)->write_addr);
     }
 }
 
@@ -420,11 +429,13 @@ int main(void)
     }
 #endif
 
-    memset((char *)memory, 0, 0x10000);
-    for (int i = GetVidMemBase(); i < GetVidMemBase() + 0x200; i++)
-    {
-        memory[i] = VDG_SPACE;
-    }
+    //memset((char *)memory, 0, 0x10000);
+    memory_memset(0, 0, 0x10000);
+    // for (int i = GetVidMemBase(); i < GetVidMemBase() + 0x200; i++)
+    // {
+    //     memory[i] = VDG_SPACE;
+    // }
+    memory_memset(GetVidMemBase(), VDG_SPACE, 0x200);
 
     char mess[32];
 
@@ -528,7 +539,8 @@ void check_command()
     }
     else if (is_command("80COL", &params))
     {
-        memory[COL80_BASE] = COL80_ON;
+        //memory[COL80_BASE] = COL80_ON;
+        memory_set(COL80_BASE, COL80_ON);
         ClearCommand();
     }
 }
@@ -696,7 +708,7 @@ uint16_t *add_border(uint16_t *p, uint16_t border_colour, uint16_t len)
 //
 
 // Changed parameter memory to be called vdu_base to avoid clash with global memory -- PHS
-uint16_t *do_text(scanvideo_scanline_buffer_t *buffer, uint relative_line_num, char *vdu_base, uint16_t *p, bool is_debug)
+uint16_t *do_text(scanvideo_scanline_buffer_t *buffer, uint relative_line_num, uint16_t *vdu_base, uint16_t *p, bool is_debug)
 {
     // Screen is 16 rows x 32 columns
     // Each char is 12 x 8 pixels
@@ -849,7 +861,8 @@ void draw_color_bar(scanvideo_scanline_buffer_t *buffer)
         {
             if (relative_line_num >= 0 && relative_line_num < (16 * 24))
             {
-                p = do_text(buffer, relative_line_num, (char *)memory + GetVidMemBase(), p, false);
+                //p = do_text(buffer, relative_line_num, (char *)memory + GetVidMemBase(), p, false);
+                p = do_text(buffer, relative_line_num, (uint16_t *)data.m_16 + GetVidMemBase(), p, false);
             }
         }
         else // Grapics modes
@@ -859,7 +872,9 @@ void draw_color_bar(scanvideo_scanline_buffer_t *buffer)
             if (relative_line_num >= 0 && relative_line_num < height)
             {
                 uint vdu_address = GetVidMemBase() + bytes_per_row(mode) * relative_line_num;
-                uint32_t *bp = (uint32_t *)memory + vdu_address / 4;
+                // uint32_t *bp = (uint32_t *)memory + vdu_address / 4;
+                size_t bp=vdu_address;
+
 
                 *p++ = COMPOSABLE_RAW_RUN;
                 *p++ = border_colour;
@@ -874,7 +889,9 @@ void draw_color_bar(scanvideo_scanline_buffer_t *buffer)
                     {
                         if ((pixel % 16) == 0)
                         {
-                            word = __builtin_bswap32(*bp++);
+                            // word = __builtin_bswap32(*bp++);
+                            word = memory_get32(bp);
+                            bp += 4;
                         }
                         uint x = (word >> 30) & 0b11;
                         uint16_t colour = palette[x];
@@ -904,7 +921,9 @@ void draw_color_bar(scanvideo_scanline_buffer_t *buffer)
                     uint16_t fg = palette[0];
                     for (uint i = 0; i < pixel_count / 32; i++)
                     {
-                        const uint32_t b = __builtin_bswap32(*bp++);
+                        //const uint32_t b = __builtin_bswap32(*bp++);
+                        const uint32_t b = memory_get32(bp);
+                            bp += 4;
                         if (pixel_count == 256)
                         {
                             if (0 == artifact)
@@ -1007,10 +1026,14 @@ void draw_color_bar(scanvideo_scanline_buffer_t *buffer)
 
 void reset_vga80()
 {
-    memory[COL80_BASE] = COL80_OFF; // Normal text mode (vga80 off)
-    memory[COL80_FG] = 0xB2;        // Foreground Green
-    memory[COL80_BG] = 0x00;        // Background Black
-    memory[COL80_STAT] = 0x12;
+    // memory[COL80_BASE] = COL80_OFF; // Normal text mode (vga80 off)
+    memory_set(COL80_BASE, COL80_OFF);
+    // memory[COL80_FG] = 0xB2;        // Foreground Green
+    memory_set(COL80_FG, 0xB2);
+    // memory[COL80_BG] = 0x00;        // Background Black
+    memory_set(COL80_BG, 0x00);
+    // memory[COL80_STAT] = 0x12;
+    memory_set(COL80_STAT, 0x12);
 }
 
 void initialize_vga80()
@@ -1031,110 +1054,110 @@ void initialize_vga80()
 
 uint16_t *do_text_vga80(scanvideo_scanline_buffer_t *buffer, uint relative_line_num, uint16_t *p)
 {
-    // Screen is 80 columns by 40 rows
-    // Each char is 12 x 8 pixels
-    uint row = relative_line_num / 12;
-    uint sub_row = relative_line_num % 12;
+//     // Screen is 80 columns by 40 rows
+//     // Each char is 12 x 8 pixels
+//     uint row = relative_line_num / 12;
+//     uint sub_row = relative_line_num % 12;
 
-    uint8_t *fd = fonts[fontno].fontdata + sub_row;
+//     uint8_t *fd = fonts[fontno].fontdata + sub_row;
 
-    if (row < 40)
-    {
-        // Compute the start address of the current row in the Atom framebuffer
-        volatile uint8_t *char_addr = memory + GetVidMemBase() + 80 * row;
+//     if (row < 40)
+//     {
+//         // Compute the start address of the current row in the Atom framebuffer
+//         volatile uint8_t *char_addr = memory + GetVidMemBase() + 80 * row;
 
-        // Read the VGA80 control registers
-        uint vga80_ctrl1 = memory[COL80_FG];
-        uint vga80_ctrl2 = memory[COL80_BG];
+//         // Read the VGA80 control registers
+//         uint vga80_ctrl1 = memory[COL80_FG];
+//         uint vga80_ctrl2 = memory[COL80_BG];
 
-        *p++ = COMPOSABLE_RAW_RUN;
-        *p++ = BLACK;   // Extra black pixel
-        *p++ = 642 - 3; //
-        *p++ = BLACK;   // Extra black pixel
+//         *p++ = COMPOSABLE_RAW_RUN;
+//         *p++ = BLACK;   // Extra black pixel
+//         *p++ = 642 - 3; //
+//         *p++ = BLACK;   // Extra black pixel
 
-        // For efficiency, compute two pixels at a time using a lookup table
-        // p is now on a word boundary due to the extra pixels above
-        uint32_t *q = (uint32_t *)p;
+//         // For efficiency, compute two pixels at a time using a lookup table
+//         // p is now on a word boundary due to the extra pixels above
+//         uint32_t *q = (uint32_t *)p;
 
-        if (vga80_ctrl1 & 0x08)
-        {
-            // Attribute mode enabled, attributes follow the characters in the frame buffer
-            volatile uint8_t *attr_addr = char_addr + 80 * 40;
-            uint shift = (sub_row >> 1) & 0x06; // 0, 2 or 4
-            // Compute these outside of the for loop for efficiency
-            uint smask0 = 0x10 >> shift;
-            uint smask1 = 0x20 >> shift;
-            uint ulmask = (sub_row == 10) ? 0xFF : 0x00;
-            for (int col = 0; col < 80; col++)
-            {
-                uint ch = *char_addr++;
-                uint attr = *attr_addr++;
-                uint32_t *vp = vga80_lut + ((attr & 0x77) << 2);
-                if (attr & 0x80)
-                {
-                    // Semi Graphics
-                    uint32_t p1 = (ch & smask1) ? *(vp + 3) : *vp;
-                    uint32_t p0 = (ch & smask0) ? *(vp + 3) : *vp;
-                    // Unroll the writing of the four pixel pairs
-                    *q++ = p1;
-                    *q++ = p1;
-                    *q++ = p0;
-                    *q++ = p0;
-                }
-                else
-                {
-#if (PLATFORM == PLATFORM_DRAGON)
-                    ch ^= 0x60;
-#endif
-                    // Text
-                    uint8_t b = fd[(ch & 0x7f) * 12];
-                    if (ch >= 0x80)
-                    {
-                        b = ~b;
-                    }
-                    // Underlined
-                    if (attr & 0x08)
-                    {
-                        b |= ulmask;
-                    }
-                    // Unroll the writing of the four pixel pairs
-                    *q++ = *(vp + ((b >> 6) & 3));
-                    *q++ = *(vp + ((b >> 4) & 3));
-                    *q++ = *(vp + ((b >> 2) & 3));
-                    *q++ = *(vp + ((b >> 0) & 3));
-                }
-            }
-        }
-        else
-        {
-            // Attribute mode disabled, use default colours from the VGA80 control registers:
-            //   bits 2..0 of VGA80_CTRL1 (#BDE4) are the default foreground colour
-            //   bits 2..0 of VGA80_CTRL2 (#BDE5) are the default background colour
-            uint attr = ((vga80_ctrl2 & 7) << 4) | (vga80_ctrl1 & 7);
-            uint32_t *vp = vga80_lut + (attr << 2);
-            for (int col = 0; col < 80; col++)
-            {
-                uint ch = *char_addr++;
-                bool inv = (ch & INV_MASK) ? true : false;
+//         if (vga80_ctrl1 & 0x08)
+//         {
+//             // Attribute mode enabled, attributes follow the characters in the frame buffer
+//             volatile uint8_t *attr_addr = char_addr + 80 * 40;
+//             uint shift = (sub_row >> 1) & 0x06; // 0, 2 or 4
+//             // Compute these outside of the for loop for efficiency
+//             uint smask0 = 0x10 >> shift;
+//             uint smask1 = 0x20 >> shift;
+//             uint ulmask = (sub_row == 10) ? 0xFF : 0x00;
+//             for (int col = 0; col < 80; col++)
+//             {
+//                 uint ch = *char_addr++;
+//                 uint attr = *attr_addr++;
+//                 uint32_t *vp = vga80_lut + ((attr & 0x77) << 2);
+//                 if (attr & 0x80)
+//                 {
+//                     // Semi Graphics
+//                     uint32_t p1 = (ch & smask1) ? *(vp + 3) : *vp;
+//                     uint32_t p0 = (ch & smask0) ? *(vp + 3) : *vp;
+//                     // Unroll the writing of the four pixel pairs
+//                     *q++ = p1;
+//                     *q++ = p1;
+//                     *q++ = p0;
+//                     *q++ = p0;
+//                 }
+//                 else
+//                 {
+// #if (PLATFORM == PLATFORM_DRAGON)
+//                     ch ^= 0x60;
+// #endif
+//                     // Text
+//                     uint8_t b = fd[(ch & 0x7f) * 12];
+//                     if (ch >= 0x80)
+//                     {
+//                         b = ~b;
+//                     }
+//                     // Underlined
+//                     if (attr & 0x08)
+//                     {
+//                         b |= ulmask;
+//                     }
+//                     // Unroll the writing of the four pixel pairs
+//                     *q++ = *(vp + ((b >> 6) & 3));
+//                     *q++ = *(vp + ((b >> 4) & 3));
+//                     *q++ = *(vp + ((b >> 2) & 3));
+//                     *q++ = *(vp + ((b >> 0) & 3));
+//                 }
+//             }
+//         }
+//         else
+//         {
+//             // Attribute mode disabled, use default colours from the VGA80 control registers:
+//             //   bits 2..0 of VGA80_CTRL1 (#BDE4) are the default foreground colour
+//             //   bits 2..0 of VGA80_CTRL2 (#BDE5) are the default background colour
+//             uint attr = ((vga80_ctrl2 & 7) << 4) | (vga80_ctrl1 & 7);
+//             uint32_t *vp = vga80_lut + (attr << 2);
+//             for (int col = 0; col < 80; col++)
+//             {
+//                 uint ch = *char_addr++;
+//                 bool inv = (ch & INV_MASK) ? true : false;
 
-#if (PLATFORM == PLATFORM_DRAGON)
-                ch ^= 0x40;
-#endif
-                uint8_t b = fd[(ch & 0x7f) * 12];
-                if (inv)
-                {
-                    b = ~b;
-                }
-                // Unroll the writing of the four pixel pairs
-                *q++ = *(vp + ((b >> 6) & 3));
-                *q++ = *(vp + ((b >> 4) & 3));
-                *q++ = *(vp + ((b >> 2) & 3));
-                *q++ = *(vp + ((b >> 0) & 3));
-            }
-        }
-    }
-    // The above loops add 80 x 4 = 320 32-bit words, which is 640 16-bit words
-    return p + 640;
+// #if (PLATFORM == PLATFORM_DRAGON)
+//                 ch ^= 0x40;
+// #endif
+//                 uint8_t b = fd[(ch & 0x7f) * 12];
+//                 if (inv)
+//                 {
+//                     b = ~b;
+//                 }
+//                 // Unroll the writing of the four pixel pairs
+//                 *q++ = *(vp + ((b >> 6) & 3));
+//                 *q++ = *(vp + ((b >> 4) & 3));
+//                 *q++ = *(vp + ((b >> 2) & 3));
+//                 *q++ = *(vp + ((b >> 0) & 3));
+//             }
+//         }
+//     }
+//     // The above loops add 80 x 4 = 320 32-bit words, which is 640 16-bit words
+//     return p + 640;
 }
 
 void draw_color_bar_vga80(scanvideo_scanline_buffer_t *buffer)
@@ -1180,7 +1203,8 @@ void core1_func()
     sem_release(&video_initted);
     while (true)
     {
-        uint vga80 = memory[COL80_BASE] & COL80_ON;
+        // uint vga80 = memory[COL80_BASE] & COL80_ON;
+        uint vga80 = memory_get(COL80_BASE) & COL80_ON;
         scanvideo_scanline_buffer_t *scanline_buffer = scanvideo_begin_scanline_generation(true);
         if (vga80)
         {

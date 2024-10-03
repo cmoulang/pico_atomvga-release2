@@ -18,65 +18,55 @@
 .define DATA 0b110
 .define NONE 0b111
 
-.define IRQ_ADHI_READY 4
-.define IRQ_WRITE 5
+.define ADDR_DELAY 8
+.define MUX_DELAY 0
 
-.define ADDR_DELAY 9
-.define MUX_DELAY 4
-
-; eight-bit bus read
-.program eb_read
-    ; x = permission lookup table address - set in C
+.program eb2_address
+; calculates a 32-bit address from the 6502's 16-bit address and pushes it to the DMA channel
+; DMA address = 0x20010000 + (6502_address * 2)
 .side_set 3 opt
 .wrap_target
 loop:
-    wait    1 gpio, PIN_1MHZ 
-    wait    0 gpio, PIN_1MHZ            ; wait for 1 -> 0
-    in      x 16                    [1] ; get upper 16 bits of lookup address
-    set     pindirs, 0    side NONE     ; reset the mux
-                    
-public set_delay:                       ; Data field of instruction - modified by c
-    set     y, ADDR_DELAY side ADHI            
-delay:
-    jmp     y--, delay    
-    irq     clear IRQ_ADHI_READY    [1]
-    in      pins, 8       side NONE     ; read A8-A15 
-    set     y, MUX_DELAY  side ADLO
-delay2:
-    jmp     y--, delay2
-    in      pins, 8                     ; read A0-A7, auto push
-    pull    block                       ; get the flags
-    out     y, 1                        ; get the read-enabled flag
-    jmp     pin, read    side NONE
-; Process 6502 write
-    out     y, 1                        ; get the not-write-enabled flag
-    pull    block                       ; discard the data from DMA
-    jmp     y--, loop                   ; jmp if no write access to this address
-    irq     clear IRQ_WRITE side DATA   ; it's a write
-    jmp     loop
-read:
-; Process 6502 read
-    pull    block                       ; get the data from DMA
-    jmp     !y, loop                    ; jmp if no read access to this address
-    out     pins 8 
-    mov     osr, !null
-    out     pindirs 8 side DATA
+        wait    1 gpio, PIN_1MHZ
+        wait    0 gpio, PIN_1MHZ         ; wait for 1 -> 0
+        set     pindirs, 0    side NONE  ; reset the mux
+        set     y, ADDR_DELAY side ADHI  ; select A8-A15 on the mux
+delay:  jmp     y--, delay
+        set     x, 2
+        in      pins, 8
+        mov     osr, isr                 ; osr = A8-A15
+        mov     isr, x
+        jmp     pin a15       side ADLO
+        set     x, 1
+a15:    in      x, 12         [1]        ; isr = 0x2001 or 0x2002
+        in      osr, 7        [1]        ; A8-A14
+        in      pins, 8                  ; A0-A7
+        in      null, 1       side NONE  ; auto push - 28 bits
 .wrap
 
-.program eb_address
-    ; x = memory address - set in C
+
+.program eb2_access
+; receives a 16bit word containg read/write flags + data from DMA
+; if read && read-eabled is set then outputs data to 6502 bus
+; if write && not-wite-enabled is clear then gets data from 6502 bus and pushes to DMA
+.side_set 3 opt
 .wrap_target
 loop:
-    in x 16
-    irq wait IRQ_ADHI_READY
-    in pins 8 [MUX_DELAY+2]
-    in pins 8                       ; auto push
+        pull    block                    ; get the flags + data
+        out     pins 8                   ; set up the data in case it's a read
+        out     y, 1                     ; get the read-enabled flag
+        jmp     pin, read
+; Process 6502 write
+        out     y, 1                     ; get the not-write-enabled flag
+        jmp     y--, loop                ; jmp if no write access to this address
+        wait 1 gpio PIN_1MHZ  side DATA
+        wait 0 gpio PIN_1MHZ             ; wait for 1 -> 0
+        in pins 8
+        jmp     loop
+read:
+; Process 6502 read
+        jmp     !y, loop                 ; jmp if no read access to this address
+        mov     osr, !null
+        out     pindirs 8     side DATA
 .wrap
 
-.program eb_write
-.wrap_target
-    irq wait IRQ_WRITE [1]
-    wait 1 gpio PIN_1MHZ
-    wait 0 gpio PIN_1MHZ            ; wait for 1 -> 0
-    in pins 8
-.wrap
