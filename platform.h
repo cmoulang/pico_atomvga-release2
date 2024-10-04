@@ -59,7 +59,7 @@
 #define CMD_FONT	"FONT"
 
 //#define ClearCommand()	memory[CMD_BASE]=0x00
-#define ClearCommand()	memory_set(CMD_BASE, 0x00)
+#define ClearCommand()	eb_set(CMD_BASE, 0x00)
 
 // 6502 reset vector
 #define RESET_VEC 0xFFFC

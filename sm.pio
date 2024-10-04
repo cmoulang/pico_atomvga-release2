@@ -19,31 +19,35 @@
 .define NONE 0b111
 
 .define ADDR_DELAY 8
-.define MUX_DELAY 0
 
 .program eb2_address
-; calculates a 32-bit address from the 6502's 16-bit address and pushes it to the DMA channel
-; DMA address = 0x20010000 + (6502_address * 2)
+; calculates a pico address from the 6502's address and pushes it to the DMA channel
+; pico_address = buffer_address + (6502_address * 2)
+; (* 2 because we need the u16 that contains the read/write flags AND data)
+; 
+; jmp pin == A15
+; x = 0x20012002 (set by pio_sm_exec)
+;
 .side_set 3 opt
 .wrap_target
-loop:
-        wait    1 gpio, PIN_1MHZ
+loop:   wait    1 gpio, PIN_1MHZ
         wait    0 gpio, PIN_1MHZ         ; wait for 1 -> 0
         set     pindirs, 0    side NONE  ; reset the mux
-        set     y, ADDR_DELAY side ADHI  ; select A8-A15 on the mux
-delay:  jmp     y--, delay
-        set     x, 2
-        in      pins, 8
-        mov     osr, isr                 ; osr = A8-A15
-        mov     isr, x
-        jmp     pin a15       side ADLO
-        set     x, 1
-a15:    in      x, 12         [1]        ; isr = 0x2001 or 0x2002
-        in      osr, 7        [1]        ; A8-A14
-        in      pins, 8                  ; A0-A7
-        in      null, 1       side NONE  ; auto push - 28 bits
-.wrap
+        mov     osr, x        side ADHI
 
+        set     y, ADDR_DELAY
+delay:  jmp     y--, delay
+
+        in      pins, 7
+        jmp     pin, a15_hi   side ADLO
+        out     null, 16
+a15_hi: 
+        mov     y, isr
+        mov     isr, osr                 ; isr=2001 or 2002
+        in      y, 7                 [1]
+        in      pins, 8                  ; A0-A7
+        in      null, 1                  ; auto push - 16 bits
+.wrap
 
 .program eb2_access
 ; receives a 16bit word containg read/write flags + data from DMA
@@ -53,9 +57,9 @@ a15:    in      x, 12         [1]        ; isr = 0x2001 or 0x2002
 .wrap_target
 loop:
         pull    block                    ; get the flags + data
-        out     pins 8                   ; set up the data in case it's a read
+        out     pins 8        side NONE  ; set up the data in case it's a read
         out     y, 1                     ; get the read-enabled flag
-        jmp     pin, read
+        jmp     pin, read                ; jmp if 6502 read
 ; Process 6502 write
         out     y, 1                     ; get the not-write-enabled flag
         jmp     y--, loop                ; jmp if no write access to this address
@@ -69,4 +73,3 @@ read:
         mov     osr, !null
         out     pindirs 8     side DATA
 .wrap
-

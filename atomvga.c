@@ -85,7 +85,7 @@ void load_ee(void);
 int get_mode()
 {
 #if (PLATFORM == PLATFORM_ATOM)
-    return (memory_get(PIA_ADDR) & 0xf0) >> 4;
+    return (eb_get(PIA_ADDR) & 0xf0) >> 4;
 #elif (PLATFORM == PLATFORM_DRAGON)
     return ((memory[PIA_ADDR] & 0x80) >> 7) | ((memory[PIA_ADDR] & 0x70) >> 3);
 #endif
@@ -94,7 +94,7 @@ int get_mode()
 static inline bool alt_colour()
 {
 #if (PLATFORM == PLATFORM_ATOM)
-    return !!(memory_get(PIA_ADDR + 2) & 0x8);
+    return !!(eb_get(PIA_ADDR + 2) & 0x8);
 #elif (PLATFORM == PLATFORM_DRAGON)
     return (memory[PIA_ADDR] & 0x08);
 #endif
@@ -193,7 +193,7 @@ bool is_command(char *cmd,
 {
     const size_t buff_size = 30;
     char buffer[buff_size];
-    memory_get_chars(buffer, buff_size, CMD_BASE);
+    eb_get_chars(buffer, buff_size, CMD_BASE);
 //    char *p = (char *)memory + CMD_BASE;
     char *p = (char *)buffer;
     *params = (char *)NULL;
@@ -368,9 +368,10 @@ void __no_inline_not_in_flash_func(main_loop())
 
 void print_str(int line_num, char *str)
 {
+    printf("%s\n", str);
     set_debug_text(str);
     // memcpy((char *)(memory + GetVidMemBase() + 0x020 * line_num), debug_text, 32);
-    memory_set_chars(GetVidMemBase() + 0x020 * line_num, debug_text, 32);
+    eb_set_chars(GetVidMemBase() + 0x020 * line_num, debug_text, 32);
 }
 
 
@@ -416,8 +417,8 @@ int main(void)
         vreg_set_voltage(VREG_VOLTAGE_1_25);
     }
     set_sys_clock_khz(sys_freq, true);
-    stdin_uart_init();
-
+    stdout_uart_init();
+    puts("Atom Pico VGA DMA " __DATE__ " " __TIME__);
     switch_font(DEFAULT_FONT);
 
 #if (PLATFORM == PLATFORM_DRAGON)
@@ -430,12 +431,12 @@ int main(void)
 #endif
 
     //memset((char *)memory, 0, 0x10000);
-    memory_memset(0, 0, 0x10000);
+    eb_memset(0, 0, 0x10000);
     // for (int i = GetVidMemBase(); i < GetVidMemBase() + 0x200; i++)
     // {
     //     memory[i] = VDG_SPACE;
     // }
-    memory_memset(GetVidMemBase(), VDG_SPACE, 0x200);
+    eb_memset(GetVidMemBase(), VDG_SPACE, 0x200);
 
     char mess[32];
 
@@ -445,7 +446,7 @@ int main(void)
     snprintf(mess, 32, "BASE=%04X, PIA=%04X", GetVidMemBase(), PIA_ADDR);
     print_str(6, mess);
 #if (R65C02 == 1)
-    print_str(7, "R65C02 VERSION");
+    print_str(7, "R65C02 EXPERIMENTAL DMA VERSION");
 #endif
 
     // create a semaphore to be posted when video init is complete
@@ -463,9 +464,12 @@ int main(void)
     eb_set_perm(COL80_BASE, EB_PERM_READ_WRITE, 16);
     eb_set_perm_byte(PIA_ADDR, EB_PERM_WRITE_ONLY);
     eb_set_perm(0xA00, EB_PERM_READ_WRITE, 0x100);
+
+        print_str(8, "h e l l o");
+
  
     // start the DMA interface on PIO1
-    atom_if_init(pio1);
+    eb_init(pio1);
 
     demo_loop();
 }
@@ -540,7 +544,7 @@ void check_command()
     else if (is_command("80COL", &params))
     {
         //memory[COL80_BASE] = COL80_ON;
-        memory_set(COL80_BASE, COL80_ON);
+        eb_set(COL80_BASE, COL80_ON);
         ClearCommand();
     }
 }
@@ -708,7 +712,7 @@ uint16_t *add_border(uint16_t *p, uint16_t border_colour, uint16_t len)
 //
 
 // Changed parameter memory to be called vdu_base to avoid clash with global memory -- PHS
-uint16_t *do_text(scanvideo_scanline_buffer_t *buffer, uint relative_line_num, uint16_t *vdu_base, uint16_t *p, bool is_debug)
+uint16_t *do_text(scanvideo_scanline_buffer_t *buffer, uint relative_line_num, size_t vdu_base, uint16_t *p, bool is_debug)
 {
     // Screen is 16 rows x 32 columns
     // Each char is 12 x 8 pixels
@@ -728,7 +732,8 @@ uint16_t *do_text(scanvideo_scanline_buffer_t *buffer, uint relative_line_num, u
         for (int col = 0; col < 32; col++)
         {
             // Get character data from RAM and extract inv,ag,int/ext
-            uint ch = vdu_base[vdu_address + col];
+            // uint ch = vdu_base[vdu_address + col];
+            uint ch = eb_get(vdu_base + vdu_address + col);
             bool inv = (ch & INV_MASK) ? true : false;
             bool as = (ch & AS_MASK) ? true : false;
             bool intext = GetIntExt(ch);
@@ -855,14 +860,14 @@ void draw_color_bar(scanvideo_scanline_buffer_t *buffer)
 
         if (line_num >= debug_start && line_num < debug_end) // Debug in 'text' mode
         {
-            p = do_text(buffer, line_num - debug_start, debug_text, p, true);
+            //p = do_text(buffer, line_num - debug_start, debug_text, p, true);
         }
         else if (!(mode & 1)) // Alphanumeric or Semigraphics
         {
             if (relative_line_num >= 0 && relative_line_num < (16 * 24))
             {
                 //p = do_text(buffer, relative_line_num, (char *)memory + GetVidMemBase(), p, false);
-                p = do_text(buffer, relative_line_num, (uint16_t *)data.m_16 + GetVidMemBase(), p, false);
+                p = do_text(buffer, relative_line_num, GetVidMemBase(), p, false);
             }
         }
         else // Grapics modes
@@ -890,7 +895,7 @@ void draw_color_bar(scanvideo_scanline_buffer_t *buffer)
                         if ((pixel % 16) == 0)
                         {
                             // word = __builtin_bswap32(*bp++);
-                            word = memory_get32(bp);
+                            word = eb_get32(bp);
                             bp += 4;
                         }
                         uint x = (word >> 30) & 0b11;
@@ -922,7 +927,7 @@ void draw_color_bar(scanvideo_scanline_buffer_t *buffer)
                     for (uint i = 0; i < pixel_count / 32; i++)
                     {
                         //const uint32_t b = __builtin_bswap32(*bp++);
-                        const uint32_t b = memory_get32(bp);
+                        const uint32_t b = eb_get32(bp);
                             bp += 4;
                         if (pixel_count == 256)
                         {
@@ -1027,13 +1032,13 @@ void draw_color_bar(scanvideo_scanline_buffer_t *buffer)
 void reset_vga80()
 {
     // memory[COL80_BASE] = COL80_OFF; // Normal text mode (vga80 off)
-    memory_set(COL80_BASE, COL80_OFF);
+    eb_set(COL80_BASE, COL80_OFF);
     // memory[COL80_FG] = 0xB2;        // Foreground Green
-    memory_set(COL80_FG, 0xB2);
+    eb_set(COL80_FG, 0xB2);
     // memory[COL80_BG] = 0x00;        // Background Black
-    memory_set(COL80_BG, 0x00);
+    eb_set(COL80_BG, 0x00);
     // memory[COL80_STAT] = 0x12;
-    memory_set(COL80_STAT, 0x12);
+    eb_set(COL80_STAT, 0x12);
 }
 
 void initialize_vga80()
@@ -1204,7 +1209,7 @@ void core1_func()
     while (true)
     {
         // uint vga80 = memory[COL80_BASE] & COL80_ON;
-        uint vga80 = memory_get(COL80_BASE) & COL80_ON;
+        uint vga80 = eb_get(COL80_BASE) & COL80_ON;
         scanvideo_scanline_buffer_t *scanline_buffer = scanvideo_begin_scanline_generation(true);
         if (vga80)
         {

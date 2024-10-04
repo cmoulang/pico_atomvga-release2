@@ -31,10 +31,6 @@ volatile _Alignas(BUFFER_SIZE) union
     volatile uint8_t m_8[BUFFER_SIZE * 2];
 } eb_memory;
 
-#define UPDATE_QUEUE_BITS 5
-#define UPDATE_QUEUE_LEN ((1 << UPDATE_QUEUE_BITS) / 4)
-volatile _Alignas(1 << UPDATE_QUEUE_BITS) u_int32_t update_queue[UPDATE_QUEUE_LEN];
-
 static void eb2_address_program_init(PIO pio, uint sm)
 {
     uint offset;
@@ -62,7 +58,7 @@ static void eb2_address_program_init(PIO pio, uint sm)
     pio_sm_set_consecutive_pindirs(pio, sm, PIN_A0, 8, false);
 
     pio_sm_config c = eb2_address_program_get_default_config(offset);
-    sm_config_set_jmp_pin(&c, PIN_A0 + 7);      // == A15
+    sm_config_set_jmp_pin(&c, PIN_A0 + 7); // == A15
     sm_config_set_in_pins(&c, PIN_A0);
     sm_config_set_out_pins(&c, PIN_A0, 8);
     sm_config_set_set_pins(&c, PIN_A0, 8);
@@ -102,6 +98,10 @@ static void eb2_access_program_init(PIO pio, int sm)
     pio_sm_init(pio, sm, offset, &c);
 }
 
+#define UPDATE_QUEUE_BITS 4
+#define UPDATE_QUEUE_LEN (1 << UPDATE_QUEUE_BITS)
+volatile _Alignas(UPDATE_QUEUE_LEN) u_int16_t update_queue[UPDATE_QUEUE_LEN];
+
 static uint address_chan;
 static uint read_data_chan;
 static uint address_chan2;
@@ -115,7 +115,6 @@ static void eb_setup_dma(PIO pio, int eb2_address_sm,
     read_data_chan = dma_claim_unused_channel(true);
     address_chan2 = dma_claim_unused_channel(true);
     write_data_chan = dma_claim_unused_channel(true);
-    update_queue_chan = dma_claim_unused_channel(true);
 
     dma_channel_config c;
 
@@ -138,7 +137,7 @@ static void eb_setup_dma(PIO pio, int eb2_address_sm,
     // Copies data from the memory to fifo
     c = dma_channel_get_default_config(read_data_chan);
     channel_config_set_high_priority(&c, true);
-    //channel_config_set_dreq(&c, pio_get_dreq(pio, eb2_access_sm, true));
+    // channel_config_set_dreq(&c, pio_get_dreq(pio, eb2_access_sm, true));
     channel_config_set_transfer_data_size(&c, DMA_SIZE_16);
     channel_config_set_read_increment(&c, false);
     channel_config_set_write_increment(&c, false);
@@ -175,7 +174,7 @@ static void eb_setup_dma(PIO pio, int eb2_address_sm,
     channel_config_set_transfer_data_size(&c, DMA_SIZE_8);
     channel_config_set_read_increment(&c, false);
     channel_config_set_write_increment(&c, false);
-    channel_config_set_chain_to(&c, update_queue_chan);
+    //channel_config_set_chain_to(&c, update_queue_chan);
     dma_channel_configure(
         write_data_chan,
         &c,
@@ -184,10 +183,10 @@ static void eb_setup_dma(PIO pio, int eb2_address_sm,
         1,
         false);
 
-    // Updates the update queue
+    // Copies data from fifo to memory
     c = dma_channel_get_default_config(update_queue_chan);
     channel_config_set_high_priority(&c, true);
-    channel_config_set_transfer_data_size(&c, DMA_SIZE_32);
+    channel_config_set_transfer_data_size(&c, DMA_SIZE_16);
     channel_config_set_read_increment(&c, false);
     channel_config_set_write_increment(&c, true);
     channel_config_set_ring(&c, true, UPDATE_QUEUE_BITS);
@@ -195,7 +194,7 @@ static void eb_setup_dma(PIO pio, int eb2_address_sm,
         update_queue_chan,
         &c,
         &update_queue,
-        &dma_channel_hw_addr(write_data_chan)->write_addr,
+        &dma_channel_hw_addr(read_data_chan)->read_addr,
         1,
         false);
 }
@@ -251,8 +250,8 @@ static inline uint32_t eb_get32(size_t address)
 {
     uint32_t result =
         (eb_memory.m_8[address * 2] << 24) +
-        (eb_memory.m_8[address * 2 + 2] << 16)+
-        (eb_memory.m_8[address * 2 + 4] << 8)+
+        (eb_memory.m_8[address * 2 + 2] << 16) +
+        (eb_memory.m_8[address * 2 + 4] << 8) +
         (eb_memory.m_8[address * 2 + 6] << 0);
 
     return result;
