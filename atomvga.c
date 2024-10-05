@@ -1059,110 +1059,117 @@ void initialize_vga80()
 
 uint16_t *do_text_vga80(scanvideo_scanline_buffer_t *buffer, uint relative_line_num, uint16_t *p)
 {
-//     // Screen is 80 columns by 40 rows
-//     // Each char is 12 x 8 pixels
-//     uint row = relative_line_num / 12;
-//     uint sub_row = relative_line_num % 12;
+    // Screen is 80 columns by 40 rows
+    // Each char is 12 x 8 pixels
+    uint row = relative_line_num / 12;
+    uint sub_row = relative_line_num % 12;
 
-//     uint8_t *fd = fonts[fontno].fontdata + sub_row;
+    uint8_t *fd = fonts[fontno].fontdata + sub_row;
 
-//     if (row < 40)
-//     {
-//         // Compute the start address of the current row in the Atom framebuffer
-//         volatile uint8_t *char_addr = memory + GetVidMemBase() + 80 * row;
+    if (row < 40)
+    {
+        // Compute the start address of the current row in the Atom framebuffer
+        // volatile uint8_t *char_addr = memory + GetVidMemBase() + 80 * row;
+        uint char_addr = GetVidMemBase() + 80 * row;
 
-//         // Read the VGA80 control registers
-//         uint vga80_ctrl1 = memory[COL80_FG];
-//         uint vga80_ctrl2 = memory[COL80_BG];
+        // Read the VGA80 control registers
+        // uint vga80_ctrl1 = memory[COL80_FG];
+        uint vga80_ctrl1 = eb_get(COL80_FG);
+        // uint vga80_ctrl2 = memory[COL80_BG];
+        uint vga80_ctrl2 = eb_get(COL80_BG);
 
-//         *p++ = COMPOSABLE_RAW_RUN;
-//         *p++ = BLACK;   // Extra black pixel
-//         *p++ = 642 - 3; //
-//         *p++ = BLACK;   // Extra black pixel
+        *p++ = COMPOSABLE_RAW_RUN;
+        *p++ = BLACK;   // Extra black pixel
+        *p++ = 642 - 3; //
+        *p++ = BLACK;   // Extra black pixel
 
-//         // For efficiency, compute two pixels at a time using a lookup table
-//         // p is now on a word boundary due to the extra pixels above
-//         uint32_t *q = (uint32_t *)p;
+        // For efficiency, compute two pixels at a time using a lookup table
+        // p is now on a word boundary due to the extra pixels above
+        uint32_t *q = (uint32_t *)p;
 
-//         if (vga80_ctrl1 & 0x08)
-//         {
-//             // Attribute mode enabled, attributes follow the characters in the frame buffer
-//             volatile uint8_t *attr_addr = char_addr + 80 * 40;
-//             uint shift = (sub_row >> 1) & 0x06; // 0, 2 or 4
-//             // Compute these outside of the for loop for efficiency
-//             uint smask0 = 0x10 >> shift;
-//             uint smask1 = 0x20 >> shift;
-//             uint ulmask = (sub_row == 10) ? 0xFF : 0x00;
-//             for (int col = 0; col < 80; col++)
-//             {
-//                 uint ch = *char_addr++;
-//                 uint attr = *attr_addr++;
-//                 uint32_t *vp = vga80_lut + ((attr & 0x77) << 2);
-//                 if (attr & 0x80)
-//                 {
-//                     // Semi Graphics
-//                     uint32_t p1 = (ch & smask1) ? *(vp + 3) : *vp;
-//                     uint32_t p0 = (ch & smask0) ? *(vp + 3) : *vp;
-//                     // Unroll the writing of the four pixel pairs
-//                     *q++ = p1;
-//                     *q++ = p1;
-//                     *q++ = p0;
-//                     *q++ = p0;
-//                 }
-//                 else
-//                 {
-// #if (PLATFORM == PLATFORM_DRAGON)
-//                     ch ^= 0x60;
-// #endif
-//                     // Text
-//                     uint8_t b = fd[(ch & 0x7f) * 12];
-//                     if (ch >= 0x80)
-//                     {
-//                         b = ~b;
-//                     }
-//                     // Underlined
-//                     if (attr & 0x08)
-//                     {
-//                         b |= ulmask;
-//                     }
-//                     // Unroll the writing of the four pixel pairs
-//                     *q++ = *(vp + ((b >> 6) & 3));
-//                     *q++ = *(vp + ((b >> 4) & 3));
-//                     *q++ = *(vp + ((b >> 2) & 3));
-//                     *q++ = *(vp + ((b >> 0) & 3));
-//                 }
-//             }
-//         }
-//         else
-//         {
-//             // Attribute mode disabled, use default colours from the VGA80 control registers:
-//             //   bits 2..0 of VGA80_CTRL1 (#BDE4) are the default foreground colour
-//             //   bits 2..0 of VGA80_CTRL2 (#BDE5) are the default background colour
-//             uint attr = ((vga80_ctrl2 & 7) << 4) | (vga80_ctrl1 & 7);
-//             uint32_t *vp = vga80_lut + (attr << 2);
-//             for (int col = 0; col < 80; col++)
-//             {
-//                 uint ch = *char_addr++;
-//                 bool inv = (ch & INV_MASK) ? true : false;
+        if (vga80_ctrl1 & 0x08)
+        {
+            // Attribute mode enabled, attributes follow the characters in the frame buffer
+            // volatile uint8_t *attr_addr = char_addr + 80 * 40;
+            uint attr_addr = char_addr + 80 * 40;
+            uint shift = (sub_row >> 1) & 0x06; // 0, 2 or 4
+            // Compute these outside of the for loop for efficiency
+            uint smask0 = 0x10 >> shift;
+            uint smask1 = 0x20 >> shift;
+            uint ulmask = (sub_row == 10) ? 0xFF : 0x00;
+            for (int col = 0; col < 80; col++)
+            {
+                // uint ch = *char_addr++;
+                uint ch = eb_get(char_addr++);
+                // uint attr = *attr_addr++;
+                uint attr = eb_get(attr_addr++);
+                uint32_t *vp = vga80_lut + ((attr & 0x77) << 2);
+                if (attr & 0x80)
+                {
+                    // Semi Graphics
+                    uint32_t p1 = (ch & smask1) ? *(vp + 3) : *vp;
+                    uint32_t p0 = (ch & smask0) ? *(vp + 3) : *vp;
+                    // Unroll the writing of the four pixel pairs
+                    *q++ = p1;
+                    *q++ = p1;
+                    *q++ = p0;
+                    *q++ = p0;
+                }
+                else
+                {
+#if (PLATFORM == PLATFORM_DRAGON)
+                    ch ^= 0x60;
+#endif
+                    // Text
+                    uint8_t b = fd[(ch & 0x7f) * 12];
+                    if (ch >= 0x80)
+                    {
+                        b = ~b;
+                    }
+                    // Underlined
+                    if (attr & 0x08)
+                    {
+                        b |= ulmask;
+                    }
+                    // Unroll the writing of the four pixel pairs
+                    *q++ = *(vp + ((b >> 6) & 3));
+                    *q++ = *(vp + ((b >> 4) & 3));
+                    *q++ = *(vp + ((b >> 2) & 3));
+                    *q++ = *(vp + ((b >> 0) & 3));
+                }
+            }
+        }
+        else
+        {
+            // Attribute mode disabled, use default colours from the VGA80 control registers:
+            //   bits 2..0 of VGA80_CTRL1 (#BDE4) are the default foreground colour
+            //   bits 2..0 of VGA80_CTRL2 (#BDE5) are the default background colour
+            uint attr = ((vga80_ctrl2 & 7) << 4) | (vga80_ctrl1 & 7);
+            uint32_t *vp = vga80_lut + (attr << 2);
+            for (int col = 0; col < 80; col++)
+            {
+                // uint ch = *char_addr++;
+                uint ch = eb_get(char_addr++);
+                bool inv = (ch & INV_MASK) ? true : false;
 
-// #if (PLATFORM == PLATFORM_DRAGON)
-//                 ch ^= 0x40;
-// #endif
-//                 uint8_t b = fd[(ch & 0x7f) * 12];
-//                 if (inv)
-//                 {
-//                     b = ~b;
-//                 }
-//                 // Unroll the writing of the four pixel pairs
-//                 *q++ = *(vp + ((b >> 6) & 3));
-//                 *q++ = *(vp + ((b >> 4) & 3));
-//                 *q++ = *(vp + ((b >> 2) & 3));
-//                 *q++ = *(vp + ((b >> 0) & 3));
-//             }
-//         }
-//     }
-//     // The above loops add 80 x 4 = 320 32-bit words, which is 640 16-bit words
-//     return p + 640;
+#if (PLATFORM == PLATFORM_DRAGON)
+                ch ^= 0x40;
+#endif
+                uint8_t b = fd[(ch & 0x7f) * 12];
+                if (inv)
+                {
+                    b = ~b;
+                }
+                // Unroll the writing of the four pixel pairs
+                *q++ = *(vp + ((b >> 6) & 3));
+                *q++ = *(vp + ((b >> 4) & 3));
+                *q++ = *(vp + ((b >> 2) & 3));
+                *q++ = *(vp + ((b >> 0) & 3));
+            }
+        }
+    }
+    // The above loops add 80 x 4 = 320 32-bit words, which is 640 16-bit words
+    return p + 640;
 }
 
 void draw_color_bar_vga80(scanvideo_scanline_buffer_t *buffer)
