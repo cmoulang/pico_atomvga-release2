@@ -65,7 +65,7 @@ loop:
         jmp     y--, loop                ; jmp if no write access to this address
         wait 1 gpio PIN_1MHZ  side DATA
         wait 0 gpio PIN_1MHZ             ; wait for 1 -> 0
-        in pins 8
+        in      pins 8
         jmp     loop
 read:
 ; Process 6502 read

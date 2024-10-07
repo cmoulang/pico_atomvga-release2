@@ -1,23 +1,20 @@
 #pragma once
 
-#include <stdio.h>
-#include <string.h>
-
 #include "pico/stdlib.h"
 #include "hardware/clocks.h"
 #include "hardware/dma.h"
 #include "hardware/pio.h"
 #include "sm.pio.h"
 
-#define ADD_BITS 16
-#define BUFFER_SIZE 0x10000
+#define EB_ADD_BITS 16
+#define EB_BUFFER_SIZE 0x10000
 
 enum eb_perm
 {
     EB_PERM_WRITE_ONLY = 0b00,
     EB_PERM_READ_WRITE = 0b01,
     EB_PERM_NO_ACCESS = 0b10,
-    EB_PERM_READ_ONLY = 0b11
+    EB_PERM_READ_ONLY = 0b11,
 };
 
 static_assert(sizeof(void *) == 4);
@@ -25,15 +22,15 @@ static_assert(sizeof(int) == 4);
 static_assert(sizeof(short) == 2);
 
 // Buffer spans 6502 address space
-volatile _Alignas(BUFFER_SIZE) union
+volatile _Alignas(EB_BUFFER_SIZE) union
 {
-    volatile uint16_t m_16[BUFFER_SIZE];
-    volatile uint8_t m_8[BUFFER_SIZE * 2];
+    volatile uint16_t m_16[EB_BUFFER_SIZE];
+    volatile uint8_t m_8[EB_BUFFER_SIZE * 2];
 } eb_memory;
 
-#define UPDATE_QUEUE_BITS 5
-#define UPDATE_QUEUE_LEN ((1 << UPDATE_QUEUE_BITS) / 4)
-volatile _Alignas(1 << UPDATE_QUEUE_BITS) u_int32_t update_queue[UPDATE_QUEUE_LEN];
+#define EB_EVENT_QUEUE_BITS 5
+#define EB_EVENT_QUEUE_LEN ((1 << EB_EVENT_QUEUE_BITS) / 4)
+volatile _Alignas(1 << EB_EVENT_QUEUE_BITS) u_int32_t eb_event_queue[EB_EVENT_QUEUE_LEN];
 
 static void eb2_address_program_init(PIO pio, uint sm)
 {
@@ -46,12 +43,13 @@ static void eb2_address_program_init(PIO pio, uint sm)
     for (int pin = PIN_A0; pin < PIN_A0 + 8; pin++)
     {
         pio_gpio_init(pio, pin);
-        // gpio_set_pulls(pin, true, false);
+        gpio_set_pulls(pin, true, false);
     }
 
     for (int pin = PIN_MUX_DATA; pin < PIN_MUX_DATA + 3; pin++)
     {
         pio_gpio_init(pio, pin);
+        gpio_set_pulls(pin, true, false);
     }
 
     pio_sm_set_pins_with_mask(pio, sm,
@@ -72,10 +70,11 @@ static void eb2_address_program_init(PIO pio, uint sm)
 
     sm_config_set_in_shift(&c, false, true, 16);
 
+    // Calculate address for low and high 64K chunks: 0x20012002 on rp2040
     uint address = (uint)&eb_memory >> 16;
     address = (address << 16) | (address + 1);
 
-    pio_sm_put(pio, sm, 0x20012002);
+    pio_sm_put(pio, sm, address); 
     pio_sm_exec(pio, sm, pio_encode_pull(false, true));
     pio_sm_exec(pio, sm, pio_encode_mov(pio_x, pio_osr));
 
@@ -106,7 +105,7 @@ static uint address_chan;
 static uint read_data_chan;
 static uint address_chan2;
 static uint write_data_chan;
-static uint update_queue_chan;
+static uint event_queue_chan;
 
 static void eb_setup_dma(PIO pio, int eb2_address_sm,
                          int eb2_access_sm)
@@ -115,7 +114,7 @@ static void eb_setup_dma(PIO pio, int eb2_address_sm,
     read_data_chan = dma_claim_unused_channel(true);
     address_chan2 = dma_claim_unused_channel(true);
     write_data_chan = dma_claim_unused_channel(true);
-    update_queue_chan = dma_claim_unused_channel(true);
+    event_queue_chan = dma_claim_unused_channel(true);
 
     dma_channel_config c;
 
@@ -175,7 +174,7 @@ static void eb_setup_dma(PIO pio, int eb2_address_sm,
     channel_config_set_transfer_data_size(&c, DMA_SIZE_8);
     channel_config_set_read_increment(&c, false);
     channel_config_set_write_increment(&c, false);
-    channel_config_set_chain_to(&c, update_queue_chan);
+    channel_config_set_chain_to(&c, event_queue_chan);
     dma_channel_configure(
         write_data_chan,
         &c,
@@ -184,23 +183,23 @@ static void eb_setup_dma(PIO pio, int eb2_address_sm,
         1,
         false);
 
-    // Updates the update queue
-    c = dma_channel_get_default_config(update_queue_chan);
+    // Updates the event queue
+    c = dma_channel_get_default_config(event_queue_chan);
     channel_config_set_high_priority(&c, true);
     channel_config_set_transfer_data_size(&c, DMA_SIZE_32);
     channel_config_set_read_increment(&c, false);
     channel_config_set_write_increment(&c, true);
-    channel_config_set_ring(&c, true, UPDATE_QUEUE_BITS);
+    channel_config_set_ring(&c, true, EB_EVENT_QUEUE_BITS);
     dma_channel_configure(
-        update_queue_chan,
+        event_queue_chan,
         &c,
-        &update_queue,
+        &eb_event_queue,
         &dma_channel_hw_addr(write_data_chan)->write_addr,
         1,
         false);
 }
 
-/// @brief initialise and start the PIO and DMA interface to the eight bit bus
+/// @brief initialise and start the PIO and DMA interface to the 6502 bus
 /// @param pio the pio instance to use
 static void eb_init(PIO pio) //, irq_handler_t handler)
 {
@@ -216,20 +215,20 @@ static void eb_init(PIO pio) //, irq_handler_t handler)
 }
 
 /// @brief set the read/write permissions for an address
-/// @param address 16 bit address
+/// @param address 6502 address
 /// @param  perm see enum for possible values
-static inline void eb_set_perm_byte(size_t address, enum eb_perm perm)
+static inline void eb_set_perm_byte(uint16_t address, enum eb_perm perm)
 {
     eb_memory.m_8[address * 2 + 1] = perm;
 }
 
 /// @brief set the read/write permissions for a range of addresses
-/// @param start 16 bit starting address
+/// @param start 6502 starting address
 /// @param  perm see enum for possible values
 /// @param size number of bytes to set
-static void eb_set_perm(size_t start, enum eb_perm perm, size_t size)
+static void eb_set_perm(uint16_t start, enum eb_perm perm, size_t size)
 {
-    hard_assert(start + size <= BUFFER_SIZE);
+    hard_assert(start + size <= EB_BUFFER_SIZE);
     for (size_t i = start; i < start + size; i++)
     {
         eb_set_perm_byte(i, perm);
@@ -237,17 +236,17 @@ static void eb_set_perm(size_t start, enum eb_perm perm, size_t size)
 }
 
 /// @brief get a byte value
-/// @param address the 16 bit address
+/// @param address the 6502 address
 /// @return the value of the byte
-static inline uint8_t eb_get(size_t address)
+static inline uint8_t eb_get(uint16_t address)
 {
     return eb_memory.m_8[address * 2];
 }
 
 /// @brief get a 32 value
-/// @param address the 16 bit address
+/// @param address the 6502 address
 /// @return the 32 bit value
-static inline uint32_t eb_get32(size_t address)
+static inline uint32_t eb_get32(uint16_t address)
 {
     uint32_t result =
         (eb_memory.m_8[address * 2] << 24) +
@@ -259,9 +258,9 @@ static inline uint32_t eb_get32(size_t address)
 }
 
 /// @brief set a byte to a new value
-/// @param address the 16 bit address
+/// @param address the 6502 address
 /// @param value the new value
-static inline void eb_set(size_t address, unsigned char value)
+static inline void eb_set(uint16_t address, unsigned char value)
 {
     eb_memory.m_8[address * 2] = value;
 }
@@ -269,8 +268,8 @@ static inline void eb_set(size_t address, unsigned char value)
 /// @brief get a string of chars
 /// @param buffer destination buffer
 /// @param size number of chars to get
-/// @param address 16 bit address of source
-static inline void eb_get_chars(char *buffer, size_t size, size_t address)
+/// @param address 6502 address of source
+static inline void eb_get_chars(char *buffer, size_t size, uint16_t address)
 {
     for (size_t i = 0; i < size; i++)
     {
@@ -279,12 +278,12 @@ static inline void eb_get_chars(char *buffer, size_t size, size_t address)
 }
 
 /// @brief copy a string of chars to memory
-/// @param address 16 bit destination address
+/// @param address 6502 destination address
 /// @param buffer source
 /// @param size number of chars to copy
-static inline void eb_set_chars(size_t address, char *buffer, size_t size)
+static inline void eb_set_chars(uint16_t address, char *buffer, size_t size)
 {
-    hard_assert(address + size <= BUFFER_SIZE);
+    hard_assert(address + size <= EB_BUFFER_SIZE);
     for (size_t i = 0; i < size; i++)
     {
         eb_set(address + i, buffer[i]);
@@ -295,11 +294,12 @@ static inline void eb_set_chars(size_t address, char *buffer, size_t size)
 /// @param address the address to start at
 /// @param c the value to copy
 /// @param size the number of loactions to set
-static inline void eb_memset(size_t address, char c, size_t size)
+static inline void eb_memset(uint16_t address, char c, size_t size)
 {
-    hard_assert(address + size <= BUFFER_SIZE);
+    hard_assert(address + size <= EB_BUFFER_SIZE);
     for (size_t i = address; i < address + size; i++)
     {
         eb_set(i, c);
     }
 }
+

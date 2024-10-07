@@ -14,7 +14,7 @@
 // #include "r65c02.pio.h"
 // #else
 // #include "atomvga.pio.h"
-// #endif 
+// #endif
 
 // #include "atomvga_out.pio.h"
 #include "pico/stdlib.h"
@@ -33,6 +33,7 @@
 #include "eeprom.h"
 #endif
 #include "atom_if.h"
+#include "atom_if_demo.h"
 
 // PIA and frambuffer address moved into platform.h -- PHS
 
@@ -194,7 +195,7 @@ bool is_command(char *cmd,
     const size_t buff_size = 30;
     char buffer[buff_size];
     eb_get_chars(buffer, buff_size, CMD_BASE);
-//    char *p = (char *)memory + CMD_BASE;
+    //    char *p = (char *)memory + CMD_BASE;
     char *p = (char *)buffer;
     *params = (char *)NULL;
 
@@ -374,41 +375,6 @@ void print_str(int line_num, char *str)
     eb_set_chars(GetVidMemBase() + 0x020 * line_num, debug_text, 32);
 }
 
-
-uint64_t noof_trials=0;
-uint64_t in_pie=0;
-double calc_pi(int count)
-{
-    static const uint64_t rand_max_squared = (uint64_t)RAND_MAX * RAND_MAX;
-    for (int i=0; i< count; i++)
-    {
-        uint64_t x = rand();
-        uint64_t y = rand();
-        x = x * x + y * y;
-        if (x < rand_max_squared)
-        {
-            in_pie++;
-        }
-    }
-
-    noof_trials += count;
-    return (double)(4 *  in_pie) / noof_trials;
-}
-
-void demo_loop()
-{
-    puts(__DATE__ " " __TIME__);
-
-    for (;;)
-    {
-        printf("pi estimate = %.10f\n", calc_pi(500000));
-        // uint x = (uint)dma_channel_hw_addr(read_data_chan)->read_addr;
-        // printf("%X %X\n", x, (x - 0x20010000) / 2);
-        // printf("%X\n",(uint)dma_channel_hw_addr(read_data_chan)->read_addr);
-        // printf("%X\n",(uint)dma_channel_hw_addr(write_data_chan)->write_addr);
-    }
-}
-
 int main(void)
 {
     uint sys_freq = 250000;
@@ -446,8 +412,10 @@ int main(void)
     snprintf(mess, 32, "BASE=%04X, PIA=%04X", GetVidMemBase(), PIA_ADDR);
     print_str(6, mess);
 #if (R65C02 == 1)
-    print_str(7, "R65C02 EXPERIMENTAL DMA VERSION");
+    print_str(7, "R65C02 VERSION");
 #endif
+    print_str(8, "     d m a   v e r s i o n");
+
 
     // create a semaphore to be posted when video init is complete
     sem_init(&video_initted, 0, 1);
@@ -463,11 +431,10 @@ int main(void)
     eb_set_perm(FB_ADDR, EB_PERM_WRITE_ONLY, VID_MEM_SIZE);
     eb_set_perm(COL80_BASE, EB_PERM_READ_WRITE, 16);
     eb_set_perm_byte(PIA_ADDR, EB_PERM_WRITE_ONLY);
-    eb_set_perm(0xA00, EB_PERM_READ_WRITE, 0x100);
 
-        print_str(8, "h e l l o");
+    demo_init();
 
- 
+
     // start the DMA interface on PIO1
     eb_init(pio1);
 
@@ -543,7 +510,7 @@ void check_command()
     }
     else if (is_command("80COL", &params))
     {
-        //memory[COL80_BASE] = COL80_ON;
+        // memory[COL80_BASE] = COL80_ON;
         eb_set(COL80_BASE, COL80_ON);
         ClearCommand();
     }
@@ -860,13 +827,13 @@ void draw_color_bar(scanvideo_scanline_buffer_t *buffer)
 
         if (line_num >= debug_start && line_num < debug_end) // Debug in 'text' mode
         {
-            //p = do_text(buffer, line_num - debug_start, debug_text, p, true);
+            // p = do_text(buffer, line_num - debug_start, debug_text, p, true);
         }
         else if (!(mode & 1)) // Alphanumeric or Semigraphics
         {
             if (relative_line_num >= 0 && relative_line_num < (16 * 24))
             {
-                //p = do_text(buffer, relative_line_num, (char *)memory + GetVidMemBase(), p, false);
+                // p = do_text(buffer, relative_line_num, (char *)memory + GetVidMemBase(), p, false);
                 p = do_text(buffer, relative_line_num, GetVidMemBase(), p, false);
             }
         }
@@ -878,8 +845,7 @@ void draw_color_bar(scanvideo_scanline_buffer_t *buffer)
             {
                 uint vdu_address = GetVidMemBase() + bytes_per_row(mode) * relative_line_num;
                 // uint32_t *bp = (uint32_t *)memory + vdu_address / 4;
-                size_t bp=vdu_address;
-
+                size_t bp = vdu_address;
 
                 *p++ = COMPOSABLE_RAW_RUN;
                 *p++ = border_colour;
@@ -926,9 +892,9 @@ void draw_color_bar(scanvideo_scanline_buffer_t *buffer)
                     uint16_t fg = palette[0];
                     for (uint i = 0; i < pixel_count / 32; i++)
                     {
-                        //const uint32_t b = __builtin_bswap32(*bp++);
+                        // const uint32_t b = __builtin_bswap32(*bp++);
                         const uint32_t b = eb_get32(bp);
-                            bp += 4;
+                        bp += 4;
                         if (pixel_count == 256)
                         {
                             if (0 == artifact)
