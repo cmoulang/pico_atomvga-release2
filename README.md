@@ -12,6 +12,7 @@ For example: the following code
 - provide read write access to the 80 column register area, and
 - provide 256 byes of RAM at #A00. (NB: for yarrb clear bit 1 of #BFFE to access the RAM at #A00 on the Atom).
 
+
     eb_set_perm(FB_ADDR, EB_PERM_WRITE_ONLY, VID_MEM_SIZE);
     eb_set_perm_byte(PIA_ADDR, EB_PERM_WRITE_ONLY);
     eb_set_perm(COL80_BASE, EB_PERM_READ_WRITE, 16);
