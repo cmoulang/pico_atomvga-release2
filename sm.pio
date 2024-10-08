@@ -18,9 +18,9 @@
 .define DATA 0b110
 .define NONE 0b111
 
-.define ADDR_DELAY 8
+.define ADDR_DELAY 7
 
-.program eb2_address
+.program eb2_addr_65C02
 ; calculates a pico address from the 6502's address and pushes it to the DMA channel
 ; pico_address = buffer_address + (6502_address * 2)
 ; (* 2 because we need the u16 that contains the read/write flags AND data)
@@ -37,6 +37,39 @@ loop:   wait    1 gpio, PIN_1MHZ
 
         set     y, ADDR_DELAY
 delay:  jmp     y--, delay
+public wait_for_half_cycle:
+        nop
+
+        in      pins, 7
+        jmp     pin, a15_hi   side ADLO
+        out     null, 16
+a15_hi: 
+        mov     y, isr
+        mov     isr, osr                 ; isr=2001 or 2002
+        in      y, 7                 [1]
+        in      pins, 8                  ; A0-A7
+        in      null, 1                  ; auto push - 16 bits
+.wrap
+
+.program eb2_addr_other
+; calculates a pico address from the 6502's address and pushes it to the DMA channel
+; pico_address = buffer_address + (6502_address * 2)
+; (* 2 because we need the u16 that contains the read/write flags AND data)
+; 
+; jmp pin == A15
+; x = 0x20012002 (set by pio_sm_exec)
+;
+.side_set 3 opt
+.wrap_target
+loop:   wait    1 gpio, PIN_1MHZ
+        wait    0 gpio, PIN_1MHZ         ; wait for 1 -> 0
+        set     pindirs, 0    side NONE  ; reset the mux
+        mov     osr, x        side ADHI
+
+        set     y, ADDR_DELAY
+delay:  jmp     y--, delay
+public wait_for_half_cycle:
+        wait    1 gpio, PIN_1MHZ
 
         in      pins, 7
         jmp     pin, a15_hi   side ADLO

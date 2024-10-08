@@ -36,7 +36,13 @@ static void eb2_address_program_init(PIO pio, uint sm)
 {
     uint offset;
 
-    offset = pio_add_program(pio, &eb2_address_program);
+#if (R65C02==1)
+    offset = pio_add_program(pio, &eb2_addr_65C02_program);
+    pio_sm_config c = eb2_addr_65C02_program_get_default_config(offset);
+#else
+    offset = pio_add_program(pio, &eb2_addr_other_program);
+    pio_sm_config c = eb2_addr_other_program_get_default_config(offset);
+#endif
 
     (pio)->input_sync_bypass = (0xFF << PIN_A0) | (1 << PIN_R_NW);
 
@@ -59,7 +65,6 @@ static void eb2_address_program_init(PIO pio, uint sm)
     pio_sm_set_consecutive_pindirs(pio, sm, PIN_MUX_DATA, 3, true);
     pio_sm_set_consecutive_pindirs(pio, sm, PIN_A0, 8, false);
 
-    pio_sm_config c = eb2_address_program_get_default_config(offset);
     sm_config_set_jmp_pin(&c, PIN_A0 + 7);      // == A15
     sm_config_set_in_pins(&c, PIN_A0);
     sm_config_set_out_pins(&c, PIN_A0, 8);
