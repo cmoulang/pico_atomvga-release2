@@ -69,8 +69,17 @@ void handler()
         }
         else if (address >= SID_ADDR && address < SID_ADDR + SID_LEN)
         {
-            sid_updated_flag = true;
+             for (int voice = 0; voice < 3; voice++)
+            {
+                {
+                    int freq = eb_get(SID_ADDR + voice * 7);
+                    freq += eb_get(SID_ADDR + voice * 7 + 1) << 8;
+                    freq = freq * 149 / 2500;
+                    sc_voc_set_freq(&sc_voc[voice], freq);
+                }
+            }
         }
+    
         out_ptr = (out_ptr + 1) % EB_EVENT_QUEUE_LEN;
     }
 }
@@ -138,19 +147,9 @@ void demo_loop()
     for (;;)
     {
         __wfi();
-        if (sid_updated())
+        if (vdu_updated()) 
         {
-            // print_sid();
-            for (int voice = 0; voice < 3; voice++)
-            {
-                {
-                    int freq = eb_get(SID_ADDR + voice * 7);
-                    freq += eb_get(SID_ADDR + voice * 7 + 1) << 8;
-                    freq = freq * 149 / 2500;
-                    //printf("%d %5d\n", voice, freq);
-                    sc_voc_set_freq(&sc_voc[voice], freq);
-                }
-            }
+            print_screen(false);
         }
     }
 }
