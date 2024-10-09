@@ -52,6 +52,7 @@ target_link_libraries(atomvga_r65c02 PRIVATE
   pico_stdlib
   pico_scanvideo_dpi
   hardware_pio
+  hardware_pwm
   )
 
 pico_add_extra_outputs(atomvga_r65c02)

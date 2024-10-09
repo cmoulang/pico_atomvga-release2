@@ -158,7 +158,7 @@ static void eb_setup_dma(PIO pio, int eb2_address_sm,
 
     // Copies address from mem_rdata_chan to write_data_chan
     c = dma_channel_get_default_config(address_chan2);
-    channel_config_set_high_priority(&c, true);
+    //channel_config_set_high_priority(&c, true);
     channel_config_set_transfer_data_size(&c, DMA_SIZE_32);
     channel_config_set_read_increment(&c, false);
     channel_config_set_write_increment(&c, false);
@@ -174,7 +174,7 @@ static void eb_setup_dma(PIO pio, int eb2_address_sm,
 
     // Copies data from fifo to memory
     c = dma_channel_get_default_config(write_data_chan);
-    channel_config_set_high_priority(&c, true);
+    //channel_config_set_high_priority(&c, true);
     channel_config_set_dreq(&c, pio_get_dreq(pio, eb2_access_sm, false));
     channel_config_set_transfer_data_size(&c, DMA_SIZE_8);
     channel_config_set_read_increment(&c, false);
@@ -190,7 +190,7 @@ static void eb_setup_dma(PIO pio, int eb2_address_sm,
 
     // Updates the event queue
     c = dma_channel_get_default_config(event_queue_chan);
-    channel_config_set_high_priority(&c, true);
+    //channel_config_set_high_priority(&c, true);
     channel_config_set_transfer_data_size(&c, DMA_SIZE_32);
     channel_config_set_read_increment(&c, false);
     channel_config_set_write_increment(&c, true);

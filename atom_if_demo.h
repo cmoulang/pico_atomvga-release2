@@ -1,6 +1,7 @@
 #pragma once
 
 #include "atom_if.h"
+#include "sound.h"
 
 // The Atom SID sound board uses #BDC0 to #BDDF
 #define SID_ADDR 0xBDC0
@@ -123,7 +124,8 @@ void print_sid();
 
 void demo_loop()
 {
-    printf("\e[2J");
+    sc_init();
+    sc_demo();
 
     // Tell the DMA to raise IRQ line 1 when the event_queue_chan finishes copying the address
     dma_channel_set_irq1_enabled(event_queue_chan, true);
@@ -136,27 +138,20 @@ void demo_loop()
     for (;;)
     {
         __wfi();
-        if (eb_get(COL80_BASE) & COL80_ON)
+        if (sid_updated())
         {
-            // 80 column mode
-            if (vdu_updated())
+            // print_sid();
+            for (int voice = 0; voice < 3; voice++)
             {
-                print_screen(true);
+                {
+                    int freq = eb_get(SID_ADDR + voice * 7);
+                    freq += eb_get(SID_ADDR + voice * 7 + 1) << 8;
+                    freq = freq * 149 / 2500;
+                    //printf("%d %5d\n", voice, freq);
+                    sc_voc_set_freq(&sc_voc[voice], freq);
+                }
             }
         }
-        else
-        {
-            // 32 column mode
-            if (vdu_updated() && !(get_mode() & 1))
-            {
-                print_screen(false);
-            }
-            if (sid_updated())
-            {
-                print_sid();
-            }
-        }
-        // printf("pi estimate = %.10f\n", estimate_pi(500000));
     }
 }
 

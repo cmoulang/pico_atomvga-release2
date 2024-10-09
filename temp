@@ -302,3 +302,18 @@ static inline void eb_memset(size_t address, char c, size_t size)
         eb_set(i, c);
     }
 }
+
+
+ if (sid_updated())
+            {
+                // print_sid();
+                for (int voice = 0; voice < 3; voice++)
+                {
+                    {
+                        int freq = eb_get(SID_ADDR + voice * 7);
+                        freq += eb_get(SID_ADDR + voice * 7 + 1) << 8;
+                        freq = freq * 149 / 2500;
+                        sc_voc_set_freq(&sc_voc[voice], freq);
+                    }
+                }
+            }
