@@ -9,6 +9,8 @@
 #define SC_SAMPLE_RATE 20000
 #define SC_TICK_US (1000000 / SC_SAMPLE_RATE)
 #define SC_NOOF_VOICES 3
+#define SC_PWM_WRAP ((UINT16_MAX * 3) >> 6)
+
 
 enum sc_osc_type
 {
@@ -17,7 +19,7 @@ enum sc_osc_type
 };
 
 static uint16_t sc_sin_wave[SC_WAVE_TABLE_LENGTH];
-typedef bool (*sc_wave_function)(uint32_t *p);
+typedef uint16_t (*sc_wave_function_t)(uint32_t p);
 
 typedef struct
 {
@@ -25,11 +27,20 @@ typedef struct
     int pinc;
     uint32_t p;
     enum sc_osc_type osc;
+    u_int8_t* sid_addr;
 } sc_voc_voice;
 
 static volatile sc_voc_voice sc_voc[SC_NOOF_VOICES];
 
 static struct repeating_timer sc_timer;
+
+static inline int sc_freq_from_sid(uint8_t addr)
+{
+    int freq = eb_get(addr);
+    freq += eb_get(addr + 1) << 8;
+    freq = freq * 149 / 2500;
+    return freq;
+}
 
 static void sc_voc_set_freq(volatile sc_voc_voice *voice, int freq)
 {
@@ -38,14 +49,7 @@ static void sc_voc_set_freq(volatile sc_voc_voice *voice, int freq)
         return;
     }
     voice->freq = freq;
-    if (freq == 0)
-    {
-        voice->pinc = 0;
-    }
-    else
-    {
-        voice->pinc = freq * (UINT32_MAX / SC_SAMPLE_RATE);
-    }
+    voice->pinc = freq * (UINT32_MAX / SC_SAMPLE_RATE);
 }
 
 static inline void sc_voc_init(volatile sc_voc_voice *voice, enum sc_osc_type osc)
@@ -57,20 +61,21 @@ static inline void sc_voc_init(volatile sc_voc_voice *voice, enum sc_osc_type os
 
 static inline uint16_t sc_triangle(uint32_t p)
 {
-    if (p < UINT32_MAX / 2)
+    if (p & (1 << 31))
     {
-        p = p * 2;
+        p = ~p;
     }
-    else
-    {
-        p = UINT32_MAX - (p - UINT32_MAX) * 2;
-    }
-    return p >> 16;
+    return p >> 15;
 }
 
 static inline uint16_t sc_sawtooth(uint32_t p)
 {
     return p >> 16;
+}
+
+static inline uint16_t sc_noise(uint32_t p)
+{
+    return rand();
 }
 
 static inline uint16_t sc_sin(uint32_t p)
@@ -89,19 +94,22 @@ static inline uint16_t sc_voc_next_sample(volatile sc_voc_voice *voice)
     }
     else if (voice->osc == SC_OSC_SAWTOOTH)
     {
-        result = sc_sawtooth(voice->p);
+        result = sc_sawtooth(voice->p);        
     }
     return result;
 }
 
 bool sc_timer_callback(struct repeating_timer *t)
 {
-    int sample = 0;
+    static int sample;
+    pwm_set_gpio_level(SC_PIN, sample);
+ 
+    sample = 0;
     for (int i = 0; i < SC_NOOF_VOICES; i++)
     {
         sample += sc_voc_next_sample(&sc_voc[i]);
     }
-    pwm_set_gpio_level(SC_PIN, sample >> 9);
+    sample = sample >> 6;
     return true;
 }
 
@@ -126,7 +134,7 @@ static void sc_init()
     pwm_config c = pwm_get_default_config();
     pwm_config_set_clkdiv(&c, 1);
     pwm_config_set_phase_correct(&c, false);
-    pwm_config_set_wrap(&c, 2200);
+    pwm_config_set_wrap(&c, SC_PWM_WRAP);
     pwm_init(audio_pin_slice, &c, true);
     pwm_set_gpio_level(SC_PIN, 0);
     gpio_set_drive_strength(SC_PIN, GPIO_DRIVE_STRENGTH_12MA);
@@ -146,26 +154,25 @@ static bool sc_shutdown()
     return result;
 }
 
+static void sc_pwave(char* name, sc_wave_function_t wave_function)
+{
+    const int steps = 32;
+    puts("");
+    printf(name);
+    for (int i=0; i < steps; i++)
+    {
+        uint32_t p = UINT32_MAX / steps * i; 
+        printf("%4d", wave_function(p) >> 8);
+    }
+}
+
 static void sc_demo()
 {
     puts("");
-    puts("Sawtooth wave");
-    for (int i=0; i < 16; i++)
-    {
-        printf("%6d", sc_sawtooth(UINT32_MAX / 16 * i));
-    }
-    puts("");
-    puts("Triangle wave");
-    for (int i=0; i < 16; i++)
-    {
-        printf("%6d", sc_triangle(UINT32_MAX / 16 * i));
-    }
-    puts("");
-    puts("Sine wave");
-    for (int i=0; i < 16; i++)
-    {
-        printf("%6d", sc_sin(UINT32_MAX / 16 * i));
-    }
+    sc_pwave("Sawtooth:  ", sc_sawtooth);
+    sc_pwave("Triangle:  ", sc_triangle);
+    sc_pwave("Sine wave: ", sc_sin);
+    sc_pwave("Noise:     ", sc_noise);
     puts("");
 
     for (int i = 1; i < 8; i++)

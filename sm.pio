@@ -37,7 +37,6 @@ loop:   wait    1 gpio, PIN_1MHZ
 
         set     y, ADDR_DELAY
 delay:  jmp     y--, delay
-public wait_for_half_cycle:
         nop
 
         in      pins, 7
@@ -68,7 +67,6 @@ loop:   wait    1 gpio, PIN_1MHZ
 
         set     y, ADDR_DELAY
 delay:  jmp     y--, delay
-public wait_for_half_cycle:
         wait    1 gpio, PIN_1MHZ
 
         in      pins, 7

@@ -2,6 +2,7 @@
 #*
 build/*
 build2/
+junk/
 .vscode/
 sm\ copy.pio
 !build/atomvga_r65c02.uf2

@@ -55,6 +55,15 @@ static inline uint get_6502_address(uint pico_address)
     return (pico_address - (uint)&eb_memory) / 2;
 }
 
+static inline void set_freq(int voice)
+{
+    int freq = eb_get(SID_ADDR + voice * 7);
+    freq += eb_get(SID_ADDR + voice * 7 + 1) << 8;
+    freq = freq * 149 / 2500;
+    sc_voc_set_freq(&sc_voc[voice], freq);
+}
+
+
 void handler()
 {
     static size_t out_ptr = 0;
@@ -67,19 +76,20 @@ void handler()
         {
             vdu_updated_flag = true;
         }
-        else if (address >= SID_ADDR && address < SID_ADDR + SID_LEN)
+        // else if (address >= SID_ADDR && address < SID_ADDR + SID_LEN)
+        else if (address == SID_ADDR || address == SID_ADDR + 1)
         {
-             for (int voice = 0; voice < 3; voice++)
-            {
-                {
-                    int freq = eb_get(SID_ADDR + voice * 7);
-                    freq += eb_get(SID_ADDR + voice * 7 + 1) << 8;
-                    freq = freq * 149 / 2500;
-                    sc_voc_set_freq(&sc_voc[voice], freq);
-                }
-            }
+            set_freq(0);
         }
-    
+        else if (address == SID_ADDR + 7 || address == SID_ADDR + 7 + 1)
+        {
+            set_freq(1);
+        }
+        else if (address == SID_ADDR + 14 || address == SID_ADDR + 14 + 1)
+        {
+            set_freq(2);
+        }
+
         out_ptr = (out_ptr + 1) % EB_EVENT_QUEUE_LEN;
     }
 }
@@ -147,9 +157,9 @@ void demo_loop()
     for (;;)
     {
         __wfi();
-        if (vdu_updated()) 
+        if (vdu_updated())
         {
-            print_screen(false);
+            // print_screen(false);
         }
     }
 }
