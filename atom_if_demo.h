@@ -4,9 +4,6 @@
 #include "sound.h"
 #include "hardware/watchdog.h"
 
-// The Atom SID sound board uses #BDC0 to #BDDF
-#define SID_ADDR 0xBDC0
-#define SID_LEN 29
 #define YARRB_REG0 0xBFFE
 #define YARRB_4MHZ 0x20
 
@@ -58,14 +55,6 @@ static inline uint get_6502_address(uint pico_address)
     return (pico_address - (uint)&eb_memory) / 2;
 }
 
-static inline void set_freq(int voice)
-{
-    int freq = eb_get(SID_ADDR + voice * 7);
-    freq += eb_get(SID_ADDR + voice * 7 + 1) << 8;
-    freq = freq * 149 / 2500;
-    sc_voc_set_freq(&sc_voc[voice], freq);
-}
-
 volatile bool r65c02_mode = false;
 
 void handler()
@@ -81,27 +70,19 @@ void handler()
             if (!r65c02_mode && (eb_get(YARRB_REG0) & YARRB_4MHZ))
             {
                 puts("YARRB set to 4MHz mode");
-                watchdog_hw->scratch[0]=MAGIC_4MHZ_NUMBER;
+                // Shut down the 6502 interface, set the magic number and reboot..
+                eb_shutdown();
+                watchdog_hw->scratch[0] = MAGIC_4MHZ_NUMBER;
                 watchdog_enable(0, true);
-                puts("Should not be here");
             }
         }
         if (address >= FB_ADDR && address < FB_ADDR + 0x1800)
         {
             vdu_updated_flag = true;
         }
-        // else if (address >= SID_ADDR && address < SID_ADDR + SID_LEN)
-        else if (address == SID_ADDR || address == SID_ADDR + 1)
+        else if (address >= SID_BASE_ADDR && address < SID_BASE_ADDR + SID_LEN)
         {
-            set_freq(0);
-        }
-        else if (address == SID_ADDR + 7 || address == SID_ADDR + 7 + 1)
-        {
-            set_freq(1);
-        }
-        else if (address == SID_ADDR + 14 || address == SID_ADDR + 14 + 1)
-        {
-            set_freq(2);
+            sid_updated_flag = true;
         }
 
         out_ptr = (out_ptr + 1) % EB_EVENT_QUEUE_LEN;
@@ -129,10 +110,10 @@ static bool sid_updated()
 static void demo_init()
 {
     eb_set_perm(0xA00, EB_PERM_READ_WRITE, 0x100);
-    eb_set_perm(SID_ADDR, EB_PERM_WRITE_ONLY, 21);
-    eb_set_perm(SID_ADDR + 21, EB_PERM_READ_ONLY, 8);
+    eb_set_perm(SID_BASE_ADDR, EB_PERM_WRITE_ONLY, 21);
+    eb_set_perm(SID_BASE_ADDR + 21, EB_PERM_READ_ONLY, 8);
     eb_set_perm_byte(YARRB_REG0, EB_PERM_WRITE_ONLY);
-    if (watchdog_hw->scratch[0]==MAGIC_4MHZ_NUMBER)
+    if (watchdog_hw->scratch[0] == MAGIC_4MHZ_NUMBER)
     {
         r65c02_mode = true;
     }
@@ -163,7 +144,6 @@ void print_sid();
 void demo_loop()
 {
     sc_init();
-    sc_demo();
 
     // Tell the DMA to raise IRQ line 1 when the event_queue_chan finishes copying the address
     dma_channel_set_irq1_enabled(event_queue_chan, true);
@@ -178,7 +158,11 @@ void demo_loop()
         __wfi();
         if (vdu_updated())
         {
-            // print_screen(false);
+            print_screen(false);
+        }
+        if (sid_updated())
+        {
+            print_sid();
         }
     }
 }
@@ -238,7 +222,7 @@ void print_sid()
         for (int voice = 0; voice < 3; voice++)
         {
             {
-                printf(vreg_format[reg], eb_get(SID_ADDR + reg + voice * 7));
+                printf(vreg_format[reg], eb_get(SID_BASE_ADDR + reg + voice * 7));
                 printf("    ");
             }
         }

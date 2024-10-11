@@ -11,10 +11,74 @@
 #define SC_NOOF_VOICES 3
 #define SC_PWM_WRAP ((UINT16_MAX * 3) >> 6)
 
+// The Atom SID sound board uses #BDC0 to #BDDF
+#define SID_BASE_ADDR 0xBDC0
+#define SID_LEN 29
+
+// REG #	DATA                                           REG NAME TYPE
+// (Hex)	d7    d6    d5    d4    d3    d2    d1    d0
+// - --------------------------------------------------------------------
+
+// Voice 1:
+
+// 00     F7    F6    F5    F4    F3    F2    F1    F0    FREQ LO  Write
+// 01     F15   F14   F13   F12   F11   F10   F9    F8    FREQ HI  Write
+// 02     PW7   PW6   PW5   PW4   PW3   PW2   PW1   PW0   PW LO	Write
+// 03     -     -     -     -     PW11  PW10  PW9   PW8   PW HI    Write
+// 04     Noise Pulse ///   /\/\  TEST  RING  SYNC  GATE  CONTROL  Write
+// 05     ATK3  ATK2  ATK1  ATK0  DCY3  DCY2  DCY1  DCY0  ATK/DCY	Write
+// 06     STN3  STN2  STN1  STN0  RLS3  RLS2  RLS1  RLS0  STN/RLS  Write
+
+// Voice 2:
+
+// 07     F7    F6    F5    F4    F3    F2    F1    F0    FREQ LO  Write
+// 08     F15   F14   F13   F12   F11   F10   F9    F8    FREQ HI  Write
+// 09     PW7   PW6   PW5   PW4   PW3   PW2   PW1   PW0   PW LO	Write
+// 0A     -     -     -     -     PW11  PW10  PW9   PW8   PW HI    Write
+// 0B     Noise Pulse ///   /\/\  TEST  RING  SYNC  GATE  CONTROL  Write
+// 0C     ATK3  ATK2  ATK1  ATK0  DCY3  DCY2  DCY1  DCY0  ATK/DCY	Write
+// 0D     STN3  STN2  STN1  STN0  RLS3  RLS2  RLS1  RLS0  STN/RLS  Write
+
+// Voice 3:
+
+// 0E     F7    F6    F5    F4    F3    F2    F1    F0    FREQ LO  Write
+// 0F     F15   F14   F13   F12   F11   F10   F9    F8    FREQ HI  Write
+// 10     PW7   PW6   PW5   PW4   PW3   PW2   PW1   PW0   PW LO	Write
+// 11     -     -     -     -     PW11  PW10  PW9   PW8   PW HI    Write
+// 12     Noise Pulse ///   /\/\  TEST  RING  SYNC  GATE  CONTROL  Write
+// 13     ATK3  ATK2  ATK1  ATK0  DCY3  DCY2  DCY1  DCY0  ATK/DCY	Write
+// 14     STN3  STN2  STN1  STN0  RLS3  RLS2  RLS1  RLS0  STN/RLS  Write
+
+// Filter:
+
+// 15     -     -     -     -     -     FC2   FC1   FC0   FC LO	Write
+// 16     FC10  FC9   FC8   FC7   FC6   FC5   FC4   FC3   FC HI    Write
+// 17     RES3  RES2  RES1  RES0  FILEX FILT3 FILT2 FILT1 RES/FILT Write
+// 18     3 OFF HP    BP    LP    VOL3  VOL2  VOL1  VOL0  MODE/VOL Write
+
+// Misc.:
+
+// 19     PX7   PX6   PX5   PX4   PX3   PX2   PX1   PX0   POT X    Read
+// 1A     PY7   PY6   PY5   PY4   PY3   PY2   PY1   PY0   POT Y    Read
+// 1B     O7    O6    O5    O4    O3    O2    O1    O0    OSC3/RND Read
+// 1C     E7    E6    E5    E4    E3    E2    E1    E0    ENV3     Read
+
+#define FRE_LO 0
+#define FREQ_HI 1
+#define PW_LO 2
+#define PW_HI 3
+#define CONTROL 4
+#define ATK_DCY 5
+#define STN_RLS 6
+#define MODE_VOL 0x18
+#define MODE_3_OFF 0x80
+
 enum sc_osc_type
 {
-    SC_OSC_TRIANGLE = 1,
-    SC_OSC_SAWTOOTH = 2
+    SC_OSC_TRIANGLE = 0x10,
+    SC_OSC_SAWTOOTH = 0x20,
+    SC_OSC_PULSE = 0x40,
+    SC_OSC_NOISE = 0x80
 };
 
 static uint16_t sc_sin_wave[SC_WAVE_TABLE_LENGTH];
@@ -25,7 +89,6 @@ typedef struct
     int freq;
     int pinc;
     uint32_t p;
-    enum sc_osc_type osc;
     u_int8_t *sid_addr;
 } sc_voc_voice;
 
@@ -33,10 +96,18 @@ static volatile sc_voc_voice sc_voc[SC_NOOF_VOICES];
 
 static struct repeating_timer sc_timer;
 
-static inline int sc_freq_from_sid(uint8_t addr)
+/// @brief get a byte from a sid register 
+/// @param reg the register 0-28
+/// @return 
+static inline uint sid_get(uint16_t reg)
 {
-    int freq = eb_get(addr);
-    freq += eb_get(addr + 1) << 8;
+    return eb_get(SID_BASE_ADDR + reg);
+}
+
+static inline int sc_freq_from_sid(uint16_t addr)
+{
+    int freq = sid_get(addr);
+    freq += sid_get(addr + 1) << 8;
     freq = freq * 149 / 2500;
     return freq;
 }
@@ -51,30 +122,10 @@ static void sc_voc_set_freq(volatile sc_voc_voice *voice, int freq)
     voice->pinc = freq * (UINT32_MAX / SC_SAMPLE_RATE);
 }
 
-static inline void sc_voc_init(volatile sc_voc_voice *voice, enum sc_osc_type osc)
+static inline void sc_voc_init(volatile sc_voc_voice *voice)
 {
     voice->p = 0;
     voice->pinc = 0;
-    voice->osc = osc;
-}
-
-static inline uint16_t sc_triangle(uint32_t p)
-{
-    if (p & (1 << 31))
-    {
-        p = ~p;
-    }
-    return p >> 15;
-}
-
-static inline uint16_t sc_sawtooth(uint32_t p)
-{
-    return p >> 16;
-}
-
-static inline uint16_t sc_noise(uint32_t p)
-{
-    return rand();
 }
 
 static inline uint16_t sc_sin(uint32_t p)
@@ -83,17 +134,45 @@ static inline uint16_t sc_sin(uint32_t p)
     return sc_sin_wave[index];
 }
 
-static inline uint16_t sc_voc_next_sample(volatile sc_voc_voice *voice)
+static inline uint16_t sc_voc_next_sample(int index)
 {
-    voice->p += voice->pinc;
+    const int v = index * 7;
+    volatile sc_voc_voice *voice = &sc_voc[index];
+
+    u_int8_t control = sid_get(v + CONTROL);
     u_int16_t result = 0;
-    if (voice->osc == SC_OSC_TRIANGLE)
+
+    if (control & 0x01)
     {
-        result = sc_triangle(voice->p);
+        sc_voc_set_freq(voice, sc_freq_from_sid(v));
+        voice->p += voice->pinc;
     }
-    else if (voice->osc == SC_OSC_SAWTOOTH)
+
+    if (control & SC_OSC_TRIANGLE)
     {
-        result = sc_sawtooth(voice->p);
+        uint32_t x = voice->p;
+        if (x & (1 << 31))
+        {
+            x = ~x;
+        }
+        result = x >> 15;
+    }
+    else if (control & SC_OSC_SAWTOOTH)
+    {
+        result = voice->p >> 16;
+    }
+    else if (control & SC_OSC_NOISE)
+    {
+        result = rand();
+    }
+    else if (control & SC_OSC_PULSE)
+    {
+        uint32_t x = voice->p;
+        if (x & (1 << 31)) {
+            result = 0xFFFF;
+        } else {
+            result = 0;
+        }
     }
     return result;
 }
@@ -103,10 +182,12 @@ bool sc_timer_callback(struct repeating_timer *t)
     static int sample;
     pwm_set_gpio_level(SC_PIN, sample);
 
-    sample = 0;
-    for (int i = 0; i < SC_NOOF_VOICES; i++)
+    sample += sc_voc_next_sample(0);
+    sample += sc_voc_next_sample(1);
+    int x = sid_get(MODE_VOL);
+    if (!(x & MODE_3_OFF))
     {
-        sample += sc_voc_next_sample(&sc_voc[i]);
+        sample += sc_voc_next_sample(2);
     }
     sample = sample >> 6;
     return true;
@@ -114,15 +195,16 @@ bool sc_timer_callback(struct repeating_timer *t)
 
 static void sc_init()
 {
+
     for (size_t i = 0; i < SC_WAVE_TABLE_LENGTH; i++)
     {
         uint16_t x = (sin((double)2 * M_PI * i / SC_WAVE_TABLE_LENGTH) + 1) / 2 * UINT16_MAX;
         sc_sin_wave[i] = x;
     }
 
-    sc_voc_init(&sc_voc[0], SC_OSC_TRIANGLE);
-    sc_voc_init(&sc_voc[1], SC_OSC_SAWTOOTH);
-    sc_voc_init(&sc_voc[2], SC_OSC_SAWTOOTH);
+    sc_voc_init(&sc_voc[0]);
+    sc_voc_init(&sc_voc[1]);
+    sc_voc_init(&sc_voc[2]);
 
     gpio_set_dir(SC_PIN, GPIO_OUT);
     gpio_set_function(SC_PIN, GPIO_FUNC_PWM);
@@ -149,42 +231,4 @@ static bool sc_shutdown()
     sleep_us(SC_TICK_US * 2);
     pwm_set_gpio_level(SC_PIN, 0);
     return result;
-}
-
-static void sc_pwave(char *name, sc_wave_function_t wave_function)
-{
-    const int steps = 32;
-    puts("");
-    printf(name);
-    for (int i = 0; i < steps; i++)
-    {
-        uint32_t p = UINT32_MAX / steps * i;
-        printf("%4d", wave_function(p) >> 8);
-    }
-}
-
-static void sc_demo()
-{
-    puts("");
-    sc_pwave("Sawtooth:  ", sc_sawtooth);
-    sc_pwave("Triangle:  ", sc_triangle);
-    sc_pwave("Sine wave: ", sc_sin);
-    sc_pwave("Noise:     ", sc_noise);
-    puts("");
-
-    for (int i = 1; i < 8; i++)
-    {
-        sleep_ms(100);
-        for (int v = 0; v < SC_NOOF_VOICES; v++)
-        {
-            int x = rand() % 1000;
-            x = x + 500;
-            sc_voc_set_freq(&sc_voc[v], x);
-        }
-    }
-    sleep_ms(400);
-    for (int v = 0; v < SC_NOOF_VOICES; v++)
-    {
-        sc_voc_set_freq(&sc_voc[v], 0);
-    }
 }

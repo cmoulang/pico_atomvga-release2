@@ -229,6 +229,15 @@ static void eb_init(PIO pio) //, irq_handler_t handler)
     pio_enable_sm_mask_in_sync(pio, 1u << eb2_address_sm | 1u << eb2_access_sm);
 }
 
+/// @brief shutdown the 6502 bus interface prior to reset
+static void eb_shutdown()
+{
+    // TODO - remove hardcoded values
+    pio_sm_set_enabled(pio1, 1, false);
+    sleep_us(1);
+    pio_sm_set_enabled(pio1, 0, false);
+}
+
 /// @brief set the read/write permissions for an address
 /// @param address 6502 address
 /// @param  perm see enum for possible values
