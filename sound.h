@@ -11,7 +11,6 @@
 #define SC_NOOF_VOICES 3
 #define SC_PWM_WRAP ((UINT16_MAX * 3) >> 6)
 
-
 enum sc_osc_type
 {
     SC_OSC_TRIANGLE = 1,
@@ -27,7 +26,7 @@ typedef struct
     int pinc;
     uint32_t p;
     enum sc_osc_type osc;
-    u_int8_t* sid_addr;
+    u_int8_t *sid_addr;
 } sc_voc_voice;
 
 static volatile sc_voc_voice sc_voc[SC_NOOF_VOICES];
@@ -94,7 +93,7 @@ static inline uint16_t sc_voc_next_sample(volatile sc_voc_voice *voice)
     }
     else if (voice->osc == SC_OSC_SAWTOOTH)
     {
-        result = sc_sawtooth(voice->p);        
+        result = sc_sawtooth(voice->p);
     }
     return result;
 }
@@ -103,7 +102,7 @@ bool sc_timer_callback(struct repeating_timer *t)
 {
     static int sample;
     pwm_set_gpio_level(SC_PIN, sample);
- 
+
     sample = 0;
     for (int i = 0; i < SC_NOOF_VOICES; i++)
     {
@@ -121,11 +120,9 @@ static void sc_init()
         sc_sin_wave[i] = x;
     }
 
- 
-    for (int i = 0; i < SC_NOOF_VOICES; i++)
-    {
-        sc_voc_init(&sc_voc[i], SC_OSC_SAWTOOTH);
-    }
+    sc_voc_init(&sc_voc[0], SC_OSC_TRIANGLE);
+    sc_voc_init(&sc_voc[1], SC_OSC_SAWTOOTH);
+    sc_voc_init(&sc_voc[2], SC_OSC_SAWTOOTH);
 
     gpio_set_dir(SC_PIN, GPIO_OUT);
     gpio_set_function(SC_PIN, GPIO_FUNC_PWM);
@@ -154,14 +151,14 @@ static bool sc_shutdown()
     return result;
 }
 
-static void sc_pwave(char* name, sc_wave_function_t wave_function)
+static void sc_pwave(char *name, sc_wave_function_t wave_function)
 {
     const int steps = 32;
     puts("");
     printf(name);
-    for (int i=0; i < steps; i++)
+    for (int i = 0; i < steps; i++)
     {
-        uint32_t p = UINT32_MAX / steps * i; 
+        uint32_t p = UINT32_MAX / steps * i;
         printf("%4d", wave_function(p) >> 8);
     }
 }

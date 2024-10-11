@@ -2,10 +2,13 @@
 
 #include "atom_if.h"
 #include "sound.h"
+#include "hardware/watchdog.h"
 
 // The Atom SID sound board uses #BDC0 to #BDDF
 #define SID_ADDR 0xBDC0
 #define SID_LEN 29
+#define YARRB_REG0 0xBFFE
+#define YARRB_4MHZ 0x20
 
 /*
 
@@ -63,6 +66,7 @@ static inline void set_freq(int voice)
     sc_voc_set_freq(&sc_voc[voice], freq);
 }
 
+volatile bool r65c02_mode = false;
 
 void handler()
 {
@@ -72,6 +76,16 @@ void handler()
     while (out_ptr != get_in_ptr())
     {
         uint address = get_6502_address(eb_event_queue[out_ptr]);
+        if (address == YARRB_REG0)
+        {
+            if (!r65c02_mode && (eb_get(YARRB_REG0) & YARRB_4MHZ))
+            {
+                puts("YARRB set to 4MHz mode");
+                watchdog_hw->scratch[0]=MAGIC_4MHZ_NUMBER;
+                watchdog_enable(0, true);
+                puts("Should not be here");
+            }
+        }
         if (address >= FB_ADDR && address < FB_ADDR + 0x1800)
         {
             vdu_updated_flag = true;
@@ -117,6 +131,11 @@ static void demo_init()
     eb_set_perm(0xA00, EB_PERM_READ_WRITE, 0x100);
     eb_set_perm(SID_ADDR, EB_PERM_WRITE_ONLY, 21);
     eb_set_perm(SID_ADDR + 21, EB_PERM_READ_ONLY, 8);
+    eb_set_perm_byte(YARRB_REG0, EB_PERM_WRITE_ONLY);
+    if (watchdog_hw->scratch[0]==MAGIC_4MHZ_NUMBER)
+    {
+        r65c02_mode = true;
+    }
 }
 
 static void atom_to_ascii(char *atom, int len)

@@ -4,10 +4,12 @@
 #include "hardware/clocks.h"
 #include "hardware/dma.h"
 #include "hardware/pio.h"
+#include "hardware/watchdog.h"
 #include "sm.pio.h"
 
 #define EB_ADD_BITS 16
 #define EB_BUFFER_SIZE 0x10000
+#define MAGIC_4MHZ_NUMBER 0x50FABED
 
 enum eb_perm
 {
@@ -32,17 +34,23 @@ volatile _Alignas(EB_BUFFER_SIZE) union
 #define EB_EVENT_QUEUE_LEN ((1 << EB_EVENT_QUEUE_BITS) / 4)
 volatile _Alignas(1 << EB_EVENT_QUEUE_BITS) u_int32_t eb_event_queue[EB_EVENT_QUEUE_LEN];
 
-static void eb2_address_program_init(PIO pio, uint sm)
+static void eb2_address_program_init(PIO pio, uint sm, bool r65c02mode)
 {
     uint offset;
+    pio_sm_config c;
 
-#if (R65C02==1)
-    offset = pio_add_program(pio, &eb2_addr_65C02_program);
-    pio_sm_config c = eb2_addr_65C02_program_get_default_config(offset);
-#else
-    offset = pio_add_program(pio, &eb2_addr_other_program);
-    pio_sm_config c = eb2_addr_other_program_get_default_config(offset);
-#endif
+    if (r65c02mode)
+    {
+        puts("Loading 65C02 state machine - for 655C02 ONLY!");
+        offset = pio_add_program(pio, &eb2_addr_65C02_program);
+        c = eb2_addr_65C02_program_get_default_config(offset);
+    }
+    else
+    {
+        puts("Loading non-65C02 state machine - not ok for 65C02 above 2MHz");
+        offset = pio_add_program(pio, &eb2_addr_other_program);
+        c = eb2_addr_other_program_get_default_config(offset);
+    }
 
     (pio)->input_sync_bypass = (0xFF << PIN_A0) | (1 << PIN_R_NW);
 
@@ -65,7 +73,7 @@ static void eb2_address_program_init(PIO pio, uint sm)
     pio_sm_set_consecutive_pindirs(pio, sm, PIN_MUX_DATA, 3, true);
     pio_sm_set_consecutive_pindirs(pio, sm, PIN_A0, 8, false);
 
-    sm_config_set_jmp_pin(&c, PIN_A0 + 7);      // == A15
+    sm_config_set_jmp_pin(&c, PIN_A0 + 7); // == A15
     sm_config_set_in_pins(&c, PIN_A0);
     sm_config_set_out_pins(&c, PIN_A0, 8);
     sm_config_set_set_pins(&c, PIN_A0, 8);
@@ -79,7 +87,7 @@ static void eb2_address_program_init(PIO pio, uint sm)
     uint address = (uint)&eb_memory >> 16;
     address = (address << 16) | (address + 1);
 
-    pio_sm_put(pio, sm, address); 
+    pio_sm_put(pio, sm, address);
     pio_sm_exec(pio, sm, pio_encode_pull(false, true));
     pio_sm_exec(pio, sm, pio_encode_mov(pio_x, pio_osr));
 
@@ -142,7 +150,7 @@ static void eb_setup_dma(PIO pio, int eb2_address_sm,
     // Copies data from the memory to fifo
     c = dma_channel_get_default_config(read_data_chan);
     channel_config_set_high_priority(&c, true);
-    //channel_config_set_dreq(&c, pio_get_dreq(pio, eb2_access_sm, true));
+    // channel_config_set_dreq(&c, pio_get_dreq(pio, eb2_access_sm, true));
     channel_config_set_transfer_data_size(&c, DMA_SIZE_16);
     channel_config_set_read_increment(&c, false);
     channel_config_set_write_increment(&c, false);
@@ -158,7 +166,7 @@ static void eb_setup_dma(PIO pio, int eb2_address_sm,
 
     // Copies address from mem_rdata_chan to write_data_chan
     c = dma_channel_get_default_config(address_chan2);
-    //channel_config_set_high_priority(&c, true);
+    // channel_config_set_high_priority(&c, true);
     channel_config_set_transfer_data_size(&c, DMA_SIZE_32);
     channel_config_set_read_increment(&c, false);
     channel_config_set_write_increment(&c, false);
@@ -174,7 +182,7 @@ static void eb_setup_dma(PIO pio, int eb2_address_sm,
 
     // Copies data from fifo to memory
     c = dma_channel_get_default_config(write_data_chan);
-    //channel_config_set_high_priority(&c, true);
+    // channel_config_set_high_priority(&c, true);
     channel_config_set_dreq(&c, pio_get_dreq(pio, eb2_access_sm, false));
     channel_config_set_transfer_data_size(&c, DMA_SIZE_8);
     channel_config_set_read_increment(&c, false);
@@ -190,7 +198,7 @@ static void eb_setup_dma(PIO pio, int eb2_address_sm,
 
     // Updates the event queue
     c = dma_channel_get_default_config(event_queue_chan);
-    //channel_config_set_high_priority(&c, true);
+    // channel_config_set_high_priority(&c, true);
     channel_config_set_transfer_data_size(&c, DMA_SIZE_32);
     channel_config_set_read_increment(&c, false);
     channel_config_set_write_increment(&c, true);
@@ -208,8 +216,10 @@ static void eb_setup_dma(PIO pio, int eb2_address_sm,
 /// @param pio the pio instance to use
 static void eb_init(PIO pio) //, irq_handler_t handler)
 {
+    bool r65c02mode = watchdog_hw->scratch[0]==MAGIC_4MHZ_NUMBER;
+
     uint eb2_address_sm = 0;
-    eb2_address_program_init(pio, eb2_address_sm);
+    eb2_address_program_init(pio, eb2_address_sm, r65c02mode);
 
     uint eb2_access_sm = 1;
     eb2_access_program_init(pio, eb2_access_sm);
@@ -255,8 +265,8 @@ static inline uint32_t eb_get32(uint16_t address)
 {
     uint32_t result =
         (eb_memory.m_8[address * 2] << 24) +
-        (eb_memory.m_8[address * 2 + 2] << 16)+
-        (eb_memory.m_8[address * 2 + 4] << 8)+
+        (eb_memory.m_8[address * 2 + 2] << 16) +
+        (eb_memory.m_8[address * 2 + 4] << 8) +
         (eb_memory.m_8[address * 2 + 6] << 0);
 
     return result;
@@ -307,4 +317,3 @@ static inline void eb_memset(uint16_t address, char c, size_t size)
         eb_set(i, c);
     }
 }
-
