@@ -2,6 +2,9 @@
 
 volatile _Alignas(EB_BUFFER_SIZE) uint8_t _eb_memory[EB_BUFFER_SIZE * 2];
 
+#define EB_EVENT_QUEUE_BITS 5
+#define EB_EVENT_QUEUE_LEN ((1 << EB_EVENT_QUEUE_BITS) / __SIZEOF_INT__)
+
 static _Alignas(1 << EB_EVENT_QUEUE_BITS) uint32_t eb_event_queue[EB_EVENT_QUEUE_LEN];
 static PIO eb_pio;
 static uint eb2_address_sm = 0;
@@ -180,7 +183,7 @@ static void eb_setup_dma(PIO pio, int eb2_address_sm,
 
 void eb_init(PIO pio) //, irq_handler_t handler)
 {
-    bool r65c02mode = watchdog_hw->scratch[0] == EB_65C02_MAGIC_NUMBER;
+    bool r65c02mode = (watchdog_hw->scratch[0] == EB_65C02_MAGIC_NUMBER);
     eb_pio = pio;
     eb2_address_program_init(eb_pio, eb2_address_sm, r65c02mode);
     eb2_access_program_init(eb_pio, eb2_access_sm);
