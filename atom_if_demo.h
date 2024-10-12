@@ -39,40 +39,23 @@ double estimate_pi(int count)
 volatile bool vdu_updated_flag = false;
 volatile bool sid_updated_flag = false;
 
-/// @brief obtain the current output location for the event queue
-/// @return index of next entry to be written
-static inline uint get_in_ptr()
-{
-    uint x = (uint)dma_channel_hw_addr(event_queue_chan)->write_addr;
-    return (x - (uint)&eb_event_queue) / 4;
-}
-
-/// @brief get the 6502 address from the pico memory address
-/// @param pico_address the pico address
-/// @return the corresponding 6502 address
-static inline uint get_6502_address(uint pico_address)
-{
-    return (pico_address - (uint)&eb_memory) / 2;
-}
-
-volatile bool r65c02_mode = false;
 
 void handler()
 {
-    static size_t out_ptr = 0;
-
-    dma_hw->ints1 = 1u << event_queue_chan;
-    while (out_ptr != get_in_ptr())
+    dma_hw->ints1 = 1u << eb_get_event_chan();
+    
+    int address = eb_get_event();
+    while (address > 0)
     {
-        uint address = get_6502_address(eb_event_queue[out_ptr]);
         if (address == YARRB_REG0)
         {
-            if (!r65c02_mode && (eb_get(YARRB_REG0) & YARRB_4MHZ))
+            if ((eb_get(YARRB_REG0) & YARRB_4MHZ) && (watchdog_hw->scratch[0] != EB_65C02_MAGIC_NUMBER))
             {
                 puts("YARRB set to 4MHz mode");
-                // Shut down the 6502 interface, set the magic number and reboot..
+                // Shut down the 6502 interface, set the magic number and reboot...
                 eb_shutdown();
-                watchdog_hw->scratch[0] = MAGIC_4MHZ_NUMBER;
+                sc_shutdown();
+                watchdog_hw->scratch[0] = EB_65C02_MAGIC_NUMBER;
                 watchdog_enable(0, true);
             }
         }
@@ -84,8 +67,7 @@ void handler()
         {
             sid_updated_flag = true;
         }
-
-        out_ptr = (out_ptr + 1) % EB_EVENT_QUEUE_LEN;
+        address = eb_get_event();
     }
 }
 
@@ -113,10 +95,6 @@ static void demo_init()
     eb_set_perm(SID_BASE_ADDR, EB_PERM_WRITE_ONLY, 21);
     eb_set_perm(SID_BASE_ADDR + 21, EB_PERM_READ_ONLY, 8);
     eb_set_perm_byte(YARRB_REG0, EB_PERM_WRITE_ONLY);
-    if (watchdog_hw->scratch[0] == MAGIC_4MHZ_NUMBER)
-    {
-        r65c02_mode = true;
-    }
 }
 
 static void atom_to_ascii(char *atom, int len)
@@ -145,14 +123,13 @@ void demo_loop()
 {
     sc_init();
 
-    // Tell the DMA to raise IRQ line 1 when the event_queue_chan finishes copying the address
-    dma_channel_set_irq1_enabled(event_queue_chan, true);
+    // Tell the DMA to raise IRQ line 1 when the eb_event_chan finishes copying the address
+    dma_channel_set_irq1_enabled(eb_get_event_chan(), true);
 
     // Configure the processor to run dma_handler() when DMA IRQ 1 is asserted
     irq_set_exclusive_handler(DMA_IRQ_1, handler);
     irq_set_enabled(DMA_IRQ_1, true);
-    dma_hw->ints1 = 1u << event_queue_chan;
-
+    dma_hw->ints1 = 1u << eb_get_event_chan();
     for (;;)
     {
         __wfi();

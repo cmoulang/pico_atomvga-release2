@@ -16,6 +16,7 @@ set( CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -Wno-unused-parameter" )
 
 add_executable(atomvga
   atomvga.c
+  atom_if.c
   )
 
 pico_generate_pio_header(atomvga ${CMAKE_CURRENT_LIST_DIR}/sm.pio)
@@ -39,7 +40,8 @@ pico_enable_stdio_uart(atomvga 1)
 
 add_executable(atomvga_r65c02
   atomvga.c
-  )
+  atom_if.c
+)
 
 pico_generate_pio_header(atomvga_r65c02 ${CMAKE_CURRENT_LIST_DIR}/sm.pio)
 
@@ -66,6 +68,7 @@ pico_enable_stdio_uart(atomvga_r65c02 1)
 
 add_executable(dragonvga
   atomvga.c
+  atom_if.c
   eeprom.c
   )
 

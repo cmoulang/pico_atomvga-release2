@@ -163,7 +163,10 @@ static inline uint16_t sc_voc_next_sample(int index)
     }
     else if (control & SC_OSC_NOISE)
     {
-        result = rand();
+        if (control & 0x1) {
+            voice->p = rand();
+        }
+        result = voice->p >> 16;
     }
     else if (control & SC_OSC_PULSE)
     {
@@ -225,10 +228,9 @@ static void sc_init()
     hard_assert(ok);
 }
 
-static bool sc_shutdown()
+static inline bool sc_shutdown()
 {
     bool result = cancel_repeating_timer(&sc_timer);
-    sleep_us(SC_TICK_US * 2);
-    pwm_set_gpio_level(SC_PIN, 0);
+    gpio_set_dir(SC_PIN, false);
     return result;
 }

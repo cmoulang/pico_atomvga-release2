@@ -3,6 +3,7 @@
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
+#include "atom_if.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -32,7 +33,6 @@
 #if (PLATFORM == PLATFORM_DRAGON)
 #include "eeprom.h"
 #endif
-#include "atom_if.h"
 #include "atom_if_demo.h"
 
 // PIA and frambuffer address moved into platform.h -- PHS
